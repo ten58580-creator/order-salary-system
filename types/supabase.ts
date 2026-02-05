@@ -9,28 +9,130 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
-      staff: {
+      companies: {
         Row: {
           id: string
           created_at: string
           name: string
-          dependent_count: number
-          base_salary: number | null
-          // 他に必要なカラムがあれば追加
+          address: string | null
+          contact_info: string | null
         }
         Insert: {
           id?: string
           created_at?: string
           name: string
-          dependent_count?: number
-          base_salary?: number | null
+          address?: string | null
+          contact_info?: string | null
         }
         Update: {
           id?: string
           created_at?: string
           name?: string
-          dependent_count?: number
+          address?: string | null
+          contact_info?: string | null
+        }
+      }
+      products: {
+        Row: {
+          id: string
+          created_at: string
+          company_id: string
+          name: string
+          unit_price: number
+          unit: string // 'pk' | 'cs' | 'kg' etc
+          yomigana: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          company_id: string
+          name: string
+          unit_price?: number
+          unit?: string
+          yomigana?: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          company_id?: string
+          name?: string
+          unit_price?: number
+          unit?: string
+          yomigana?: string
+        }
+      }
+      product_prices: {
+        Row: {
+          id: string
+          product_id: string
+          unit_price: number
+          start_date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          unit_price: number
+          start_date: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          unit_price?: number
+          start_date?: string
+          created_at?: string
+        }
+      }
+      staff: {
+        Row: {
+          id: string
+          created_at: string
+          name: string
+          role: string | null // 'admin' | 'client'
+          company_id: string | null // Linked Company for clients
+          hourly_wage: number | null
+          tax_category: string | null
+          dependents: number
+          base_salary: number | null
+          pin: string | null
+          note: string | null
+
+          // Custom Allowances (3 slots)
+          allowance1_name: string | null
+          allowance1_value: number | null
+          allowance2_name: string | null
+          allowance2_value: number | null
+          allowance3_name: string | null
+          allowance3_value: number | null
+
+          // Custom Deductions (2 slots)
+          deduction1_name: string | null
+          deduction1_value: number | null
+          deduction2_name: string | null
+          deduction2_value: number | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          name: string
+          role?: string | null
+          company_id?: string | null
+          dependents?: number
           base_salary?: number | null
+          hourly_wage?: number | null
+          pin?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          name?: string
+          role?: string | null
+          company_id?: string | null
+          dependents?: number
+          base_salary?: number | null
+          hourly_wage?: number | null
+          pin?: string | null
         }
       }
       timecards: {
@@ -39,22 +141,33 @@ export interface Database {
           created_at: string
           staff_id: string
           date: string // YYYY-MM-DD
-          work_hours: number
-          // 他に必要なカラム（休憩時間、残業など）
+          worked_hours: number
+          clock_in: string | null
+          clock_out: string | null
+          break_minutes: number | null
+          notes: string | null
         }
         Insert: {
           id?: string
           created_at?: string
           staff_id: string
           date: string
-          work_hours: number
+          worked_hours: number
+          clock_in?: string | null
+          clock_out?: string | null
+          break_minutes?: number | null
+          notes?: string | null
         }
         Update: {
           id?: string
           created_at?: string
           staff_id?: string
           date?: string
-          work_hours?: number
+          worked_hours?: number
+          clock_in?: string | null
+          clock_out?: string | null
+          break_minutes?: number | null
+          notes?: string | null
         }
       }
       m_items: {
@@ -104,26 +217,35 @@ export interface Database {
         Row: {
           id: string
           created_at: string
-          date: string // YYYY-MM-DD
-          client_name: string // 依頼先名
-          item_id: string
-          pack_count: number
+          company_id: string
+          created_by: string | null
+          product_id: string
+          quantity: number
+          actual_quantity: number | null
+          order_date: string
+          status: string
         }
         Insert: {
           id?: string
           created_at?: string
-          date: string
-          client_name: string
-          item_id: string
-          pack_count: number
+          company_id: string
+          created_by?: string | null
+          product_id: string
+          quantity?: number
+          actual_quantity?: number | null
+          order_date?: string
+          status?: string
         }
         Update: {
           id?: string
           created_at?: string
-          date?: string
-          client_name?: string
-          item_id?: string
-          pack_count?: number
+          company_id?: string
+          created_by?: string | null
+          product_id?: string
+          quantity?: number
+          actual_quantity?: number | null
+          order_date?: string
+          status?: string
         }
       }
     }
