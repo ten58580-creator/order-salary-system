@@ -23,6 +23,15 @@ export default function ProductEditModal({ isOpen, onClose, product, onSave }: P
     const [prices, setPrices] = useState<ProductPrice[]>([]);
     const [loading, setLoading] = useState(false);
 
+    // Cost-related fields
+    const [wholesalePrice, setWholesalePrice] = useState<string>('0');
+    const [costPrice, setCostPrice] = useState<string>('0');
+    const [containerCost, setContainerCost] = useState<string>('0');
+    const [wrapCost, setWrapCost] = useState<string>('0');
+    const [sealCost, setSealCost] = useState<string>('0');
+    const [boxCost, setBoxCost] = useState<string>('0');
+    const [otherMaterialCost, setOtherMaterialCost] = useState<string>('0');
+
     // New Price Form
     const [newPrice, setNewPrice] = useState('');
     const [newStartDate, setNewStartDate] = useState('');
@@ -48,6 +57,15 @@ export default function ProductEditModal({ isOpen, onClose, product, onSave }: P
             fetchPrices(product.id);
             // Default new start date to Today
             setNewStartDate(format(new Date(), 'yyyy-MM-dd'));
+
+            // Load cost fields
+            setWholesalePrice(String(product.wholesale_price ?? 0));
+            setCostPrice(String(product.cost_price ?? 0));
+            setContainerCost(String(product.container_cost ?? 0));
+            setWrapCost(String(product.wrap_cost ?? 0));
+            setSealCost(String(product.seal_cost ?? 0));
+            setBoxCost(String(product.box_cost ?? 0));
+            setOtherMaterialCost(String(product.other_material_cost ?? 0));
         }
     }, [isOpen, product]);
 
@@ -65,7 +83,18 @@ export default function ProductEditModal({ isOpen, onClose, product, onSave }: P
         setLoading(true);
         const { error } = await supabase
             .from('products')
-            .update({ name, yomigana, unit })
+            .update({
+                name,
+                yomigana,
+                unit,
+                wholesale_price: Number(wholesalePrice),
+                cost_price: Number(costPrice),
+                container_cost: Number(containerCost),
+                wrap_cost: Number(wrapCost),
+                seal_cost: Number(sealCost),
+                box_cost: Number(boxCost),
+                other_material_cost: Number(otherMaterialCost)
+            })
             .eq('id', product.id);
 
         setLoading(false);
@@ -171,6 +200,105 @@ export default function ProductEditModal({ isOpen, onClose, product, onSave }: P
                                 >
                                     {units.map(u => <option key={u} value={u}>{u}</option>)}
                                 </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Cost Information */}
+                    <div className="space-y-4">
+                        <h4 className="font-bold text-slate-800 border-l-4 border-orange-500 pl-3 text-lg">原価・資材費情報</h4>
+                        <p className="text-xs text-slate-500 font-medium">※ 利益計算に使用されます。1個あたりのコストを入力してください。</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">卸値（売価）</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">¥</span>
+                                    <input
+                                        type="number"
+                                        value={wholesalePrice}
+                                        onChange={(e) => setWholesalePrice(e.target.value)}
+                                        className="w-full border-2 border-slate-400 rounded-lg p-3 pl-8 font-mono text-slate-900 text-right focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">仕入原価</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">¥</span>
+                                    <input
+                                        type="number"
+                                        value={costPrice}
+                                        onChange={(e) => setCostPrice(e.target.value)}
+                                        className="w-full border-2 border-slate-400 rounded-lg p-3 pl-8 font-mono text-slate-900 text-right focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">容器代</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">¥</span>
+                                    <input
+                                        type="number"
+                                        value={containerCost}
+                                        onChange={(e) => setContainerCost(e.target.value)}
+                                        className="w-full border-2 border-slate-400 rounded-lg p-3 pl-8 font-mono text-slate-900 text-right focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">ラップ代</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">¥</span>
+                                    <input
+                                        type="number"
+                                        value={wrapCost}
+                                        onChange={(e) => setWrapCost(e.target.value)}
+                                        className="w-full border-2 border-slate-400 rounded-lg p-3 pl-8 font-mono text-slate-900 text-right focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">シール代</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">¥</span>
+                                    <input
+                                        type="number"
+                                        value={sealCost}
+                                        onChange={(e) => setSealCost(e.target.value)}
+                                        className="w-full border-2 border-slate-400 rounded-lg p-3 pl-8 font-mono text-slate-900 text-right focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">箱代</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">¥</span>
+                                    <input
+                                        type="number"
+                                        value={boxCost}
+                                        onChange={(e) => setBoxCost(e.target.value)}
+                                        className="w-full border-2 border-slate-400 rounded-lg p-3 pl-8 font-mono text-slate-900 text-right focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-bold text-slate-700 mb-1">その他資材費</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">¥</span>
+                                    <input
+                                        type="number"
+                                        value={otherMaterialCost}
+                                        onChange={(e) => setOtherMaterialCost(e.target.value)}
+                                        className="w-full border-2 border-slate-400 rounded-lg p-3 pl-8 font-mono text-slate-900 text-right focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>

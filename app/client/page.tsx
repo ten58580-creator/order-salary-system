@@ -26,9 +26,23 @@ export default function ClientDashboard() {
 
     useEffect(() => {
         async function init() {
+            // Check for PIN-based authentication first
+            const sessionCompanyId = sessionStorage.getItem('pin_company_id');
+            const sessionCompanyName = sessionStorage.getItem('pin_company_name');
+
+            if (sessionCompanyId && sessionCompanyName) {
+                // PIN authentication
+                setUserCompanyId(sessionCompanyId);
+                setCompanyName(sessionCompanyName);
+                fetchProducts(sessionCompanyId);
+                setLoading(false);
+                return;
+            }
+
+            // Fallback to traditional auth
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
-                router.push('/login');
+                router.push('/client/login');
                 return;
             }
 

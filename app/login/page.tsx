@@ -89,6 +89,15 @@ export default function LoginPage() {
                         </div>
                     )}
 
+                    <div className="text-center">
+                        <a
+                            href="/client/login"
+                            className="text-sm text-blue-600 hover:text-blue-800 font-bold"
+                        >
+                            発注依頼側の方はこちら →
+                        </a>
+                    </div>
+
                     <div>
                         <button
                             type="submit"

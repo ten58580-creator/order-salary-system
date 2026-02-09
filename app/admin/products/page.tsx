@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabaseClient';
 import Layout from '@/components/DashboardLayout';
 import { Database } from '@/types/supabase';
-import { Edit2, Trash2, Plus, Search, Archive, ArchiveRestore, Building2, ChevronLeft } from 'lucide-react';
+import { Edit2, Trash2, Plus, Search, Archive, ArchiveRestore, Building2, ChevronLeft, Package } from 'lucide-react';
 import Link from 'next/link';
 import ProductRegistrationModal from '@/components/ProductRegistrationModal';
 import ProductEditModal from '@/components/ProductEditModal';
@@ -92,14 +92,17 @@ export default function ProductAdmin() {
         <Layout>
             <div className="p-8 max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-200 pb-4 bg-white">
                     <div>
-                        <Link href="/admin" className="text-gray-500 hover:text-blue-600 font-bold flex items-center transition mb-4">
-                            <ChevronLeft size={20} className="mr-1" />
+                        <Link href="/admin" className="text-slate-500 hover:text-blue-600 font-bold flex items-center transition mb-1 w-fit group">
+                            <ChevronLeft size={20} className="mr-1 group-hover:-translate-x-1 transition" />
                             ダッシュボードに戻る
                         </Link>
-                        <h1 className="text-3xl font-extrabold text-slate-950">商品管理</h1>
-                        <p className="text-slate-600 font-bold mt-1">
+                        <h1 className="text-3xl font-extrabold text-slate-950 flex items-center">
+                            <Package className="mr-2 text-purple-600" size={32} />
+                            商品管理
+                        </h1>
+                        <p className="text-slate-500 font-bold ml-1">
                             会社ごとの商品マスタを管理します。
                         </p>
                     </div>

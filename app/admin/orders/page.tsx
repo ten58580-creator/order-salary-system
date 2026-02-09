@@ -5,10 +5,12 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { supabase } from '@/utils/supabaseClient';
 import { Database } from '@/types/supabase';
 import { format, parse, addDays, subDays } from 'date-fns';
-import { ChevronLeft, ChevronRight, RefreshCw, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Calendar, ClipboardList } from 'lucide-react';
 import Link from 'next/link';
 
-type Order = Database['public']['Tables']['orders']['Row'];
+type Order = Database['public']['Tables']['orders']['Row'] & {
+    is_correction?: boolean;
+};
 type Company = Database['public']['Tables']['companies']['Row'];
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -75,46 +77,63 @@ export default function AdminOrdersPage() {
 
     return (
         <DashboardLayout>
-            <div className="max-w-5xl mx-auto pb-20">
-                <div className="mb-8">
-                    <Link href="/admin" className="text-gray-500 hover:text-blue-600 font-bold flex items-center mb-4 transition w-fit">
-                        <ChevronLeft size={20} className="mr-1" />
-                        ダッシュボードに戻る
-                    </Link>
-
-                    {/* Header Controls */}
-                    <div className="flex flex-col md:flex-row justify-between items-center mb-6 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                        <div className="flex items-center space-x-4 mb-4 md:mb-0">
-                            <button onClick={() => setCurrentDate(subDays(currentDate, 1))} className="p-2 border rounded hover:bg-gray-50"><ChevronLeft size={20} className="text-slate-600" /></button>
-                            <div className="text-2xl font-black text-slate-900 flex items-center">
-                                <Calendar className="mr-2 text-slate-500" />
-                                {format(currentDate, 'yyyy年 MM月 dd日 (eee)')}
-                            </div>
-                            <button onClick={() => setCurrentDate(addDays(currentDate, 1))} className="p-2 border rounded hover:bg-gray-50"><ChevronRight size={20} className="text-slate-600" /></button>
+            <div className="max-w-7xl mx-auto pb-20">
+                {/* Header - Unified Design */}
+                <div className="mb-8 bg-white border-b border-slate-200 pb-4">
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                        {/* Left: Title & Nav */}
+                        <div>
+                            <Link href="/admin" className="text-slate-500 hover:text-blue-600 font-bold flex items-center mb-1 transition w-fit group">
+                                <ChevronLeft size={20} className="mr-1 group-hover:-translate-x-1 transition" />
+                                ダッシュボードに戻る
+                            </Link>
+                            <h1 className="text-3xl font-extrabold text-slate-950 flex items-center">
+                                <ClipboardList className="mr-2 text-blue-600" size={32} />
+                                <span className="mr-3">受注管理</span>
+                            </h1>
+                            <p className="text-slate-500 font-bold ml-1">注文状況の確認と管理</p>
                         </div>
 
-                        <div className="flex gap-6 text-sm">
-                            <div className="text-center">
-                                <div className="text-gray-500 font-bold">注文数</div>
-                                <div className="font-black text-xl text-slate-950">{orders.length} <span className="text-xs">件</span></div>
-                            </div>
-                            <div className="text-center border-l border-gray-200 pl-6">
-                                <div className="text-gray-500 font-bold">予定総数</div>
-                                <div className="font-black text-xl text-slate-950">{dailyTotalPlanned.toLocaleString()} <span className="text-xs">pk</span></div>
-                            </div>
-                            <div className="text-center border-l border-gray-200 pl-6">
-                                <div className="text-gray-500 font-bold">製造実績</div>
-                                <div className="font-black text-xl text-blue-700">{dailyTotalActual.toLocaleString()} <span className="text-xs">pk</span></div>
-                            </div>
-                            <div className="text-center border-l border-gray-200 pl-6">
-                                <div className="text-gray-500 font-bold">進捗</div>
-                                <div className="font-black text-xl text-green-700">{Math.round(progress)}%</div>
+                        {/* Right: Actions */}
+                        <div className="flex items-center gap-4">
+                            <button onClick={() => fetchOrders()} className="p-2 text-slate-400 hover:text-blue-600 transition" title="更新">
+                                <RefreshCw size={20} />
+                            </button>
+
+                            {/* Date Picker */}
+                            <div className="flex items-center bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
+                                <button onClick={() => setCurrentDate(subDays(currentDate, 1))} className="p-2 hover:bg-slate-50 rounded-lg transition text-slate-600">
+                                    <ChevronLeft size={20} />
+                                </button>
+                                <div className="mx-4 flex items-center font-black text-slate-950 text-lg">
+                                    <Calendar className="mr-2 text-slate-400" size={18} />
+                                    {format(currentDate, 'yyyy年 MM月 dd日 (eee)')}
+                                </div>
+                                <button onClick={() => setCurrentDate(addDays(currentDate, 1))} className="p-2 hover:bg-slate-50 rounded-lg transition text-slate-600">
+                                    <ChevronRight size={20} />
+                                </button>
                             </div>
                         </div>
+                    </div>
 
-                        <button onClick={() => fetchOrders()} className="p-2 text-gray-400 hover:text-blue-600 transition ml-4">
-                            <RefreshCw size={24} />
-                        </button>
+                    {/* Stats Bar (Moved directly below simplified header) */}
+                    <div className="mt-6 flex flex-wrap gap-6 text-sm bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <div className="text-center">
+                            <div className="text-gray-500 font-bold">注文数</div>
+                            <div className="font-black text-xl text-slate-950">{orders.length} <span className="text-xs">件</span></div>
+                        </div>
+                        <div className="text-center border-l border-gray-200 pl-6">
+                            <div className="text-gray-500 font-bold">予定総数</div>
+                            <div className="font-black text-xl text-slate-950">{dailyTotalPlanned.toLocaleString()} <span className="text-xs">pk</span></div>
+                        </div>
+                        <div className="text-center border-l border-gray-200 pl-6">
+                            <div className="text-gray-500 font-bold">製造実績</div>
+                            <div className="font-black text-xl text-blue-700">{dailyTotalActual.toLocaleString()} <span className="text-xs">pk</span></div>
+                        </div>
+                        <div className="text-center border-l border-gray-200 pl-6">
+                            <div className="text-gray-500 font-bold">進捗</div>
+                            <div className="font-black text-xl text-green-700">{Math.round(progress)}%</div>
+                        </div>
                     </div>
                 </div>
 
@@ -139,6 +158,11 @@ export default function AdminOrdersPage() {
                                         <div className="flex items-center gap-3 mb-2">
                                             <span className="text-sm font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-md">{companyName}</span>
                                             {getStatusBadge(order.status)}
+                                            {order.is_correction && (
+                                                <span className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded font-black border border-red-200">
+                                                    修正依頼
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="text-2xl font-black text-slate-950 truncate mb-2">{product?.name || '不明な商品'}</div>
                                         <div className="text-base text-slate-500 font-bold flex items-center">

@@ -25,6 +25,16 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Custom Utilities */
+.bg-stripes-gray {
+  background-image: repeating-linear-gradient(45deg,
+      #000,
+      #000 10px,
+      transparent 10px,
+      transparent 20px);
+  background-size: 28px 28px;
+}
+
 @media print {
   @page {
     margin: 10mm;

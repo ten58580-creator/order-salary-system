@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { supabase } from '@/utils/supabaseClient';
-import { ChevronLeft, ChevronRight, CheckCircle, Truck, X, Pause, Play, Timer, Edit, Coins, TrendingUp } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Truck, X, Pause, Play, Timer, Edit, Coins, TrendingUp, Calendar } from 'lucide-react';
 import Link from 'next/link';
 
 // Type definition matching the SQL return from get_daily_production_summary
@@ -87,6 +87,34 @@ export default function ProductionPage() {
         return () => clearInterval(pollInterval);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentDate]);
+
+    // Postpone to Tomorrow Handler
+    const handlePostponeToTomorrow = async (item: ProductionItem) => {
+        const confirmed = window.confirm(`${item.product_name}を明日に移動しますか？`);
+        if (!confirmed) return;
+
+        const tomorrow = new Date(currentDate);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+        blockPollingUntil.current = Date.now() + 5000;
+
+        const { error } = await supabase
+            .from('orders')
+            .update({ scheduled_date: tomorrowStr })
+            .eq('product_id', item.product_id)
+            .eq('scheduled_date', currentDate);
+
+        if (error) {
+            console.error('Postpone Error:', error);
+            alert('移動エラー: ' + error.message);
+            blockPollingUntil.current = 0;
+        } else {
+            blockPollingUntil.current = 0;
+            await fetchProductionData(currentDate);
+            alert(`${item.product_name}を${tomorrowStr}に移動しました`);
+        }
+    };
 
     // Calculate elapsed time
     const getElapsedTime = (item: ProductionItem) => {
@@ -383,6 +411,17 @@ export default function ProductionPage() {
                                                             <Pause size={20} className="mr-1" />
                                                             中断
                                                         </button>
+
+                                                        {/* Postpone Button */}
+                                                        {!isCompleted && (
+                                                            <button
+                                                                onClick={() => handlePostponeToTomorrow(item)}
+                                                                className="flex-1 py-4 px-2 rounded-xl font-black transition flex items-center justify-center border-b-4 active:border-b-0 active:translate-y-1 text-lg bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100 hover:border-yellow-400 shadow-sm"
+                                                            >
+                                                                <Calendar size={20} className="mr-1" />
+                                                                保留
+                                                            </button>
+                                                        )}
                                                     </>
                                                 )}
 

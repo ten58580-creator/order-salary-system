@@ -10,11 +10,13 @@ type Staff = Database['public']['Tables']['staff']['Row'];
 interface StaffEditModalProps {
     isOpen: boolean;
     onClose: () => void;
-    staff: Staff | null;
+    staff?: Staff | null;
+    mode?: 'edit' | 'create';
+    companyId?: string | null; // Required for create
     onSave: () => void;
 }
 
-export default function StaffEditModal({ isOpen, onClose, staff, onSave }: StaffEditModalProps) {
+export default function StaffEditModal({ isOpen, onClose, staff, mode = 'edit', companyId, onSave }: StaffEditModalProps) {
     // Standard Fields
     const [formData, setFormData] = useState<{
         name: string;
@@ -37,7 +39,7 @@ export default function StaffEditModal({ isOpen, onClose, staff, onSave }: Staff
         deduction2_value: number;
     }>({
         name: '',
-        hourly_wage: 0,
+        hourly_wage: 1100, // Default for new staff
         dependents: 0,
         tax_category: '甲',
         pin: '0000',
@@ -52,56 +54,136 @@ export default function StaffEditModal({ isOpen, onClose, staff, onSave }: Staff
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        if (staff) {
-            setFormData({
-                name: staff.name || '',
-                hourly_wage: staff.hourly_wage || 0,
-                dependents: staff.dependents || 0,
-                tax_category: staff.tax_category || '甲',
-                pin: staff.pin || '0000',
-                note: staff.note || '',
-                // If DB has nulls, fallback to empty/0
-                allowance1_name: staff.allowance1_name || '', allowance1_value: staff.allowance1_value || 0,
-                allowance2_name: staff.allowance2_name || '', allowance2_value: staff.allowance2_value || 0,
-                allowance3_name: staff.allowance3_name || '', allowance3_value: staff.allowance3_value || 0,
-                deduction1_name: staff.deduction1_name || '', deduction1_value: staff.deduction1_value || 0,
-                deduction2_name: staff.deduction2_name || '', deduction2_value: staff.deduction2_value || 0,
-            });
+        if (isOpen) {
+            if (mode === 'edit' && staff) {
+                setFormData({
+                    name: staff.name || '',
+                    hourly_wage: staff.hourly_wage || 0,
+                    dependents: staff.dependents || 0,
+                    tax_category: staff.tax_category || '甲',
+                    pin: staff.pin || '0000',
+                    note: staff.note || '',
+                    // If DB has nulls, fallback to empty/0
+                    allowance1_name: staff.allowance1_name || '', allowance1_value: staff.allowance1_value || 0,
+                    allowance2_name: staff.allowance2_name || '', allowance2_value: staff.allowance2_value || 0,
+                    allowance3_name: staff.allowance3_name || '', allowance3_value: staff.allowance3_value || 0,
+                    deduction1_name: staff.deduction1_name || '', deduction1_value: staff.deduction1_value || 0,
+                    deduction2_name: staff.deduction2_name || '', deduction2_value: staff.deduction2_value || 0,
+                });
+            } else if (mode === 'create') {
+                // Reset for create
+                setFormData({
+                    name: '',
+                    hourly_wage: 1100,
+                    dependents: 0,
+                    tax_category: '甲',
+                    pin: '0000',
+                    note: '',
+                    allowance1_name: '', allowance1_value: 0,
+                    allowance2_name: '', allowance2_value: 0,
+                    allowance3_name: '', allowance3_value: 0,
+                    deduction1_name: '', deduction1_value: 0,
+                    deduction2_name: '', deduction2_value: 0,
+                });
+            }
         }
-    }, [staff]);
+    }, [isOpen, staff, mode]);
 
-    if (!isOpen || !staff) return null;
+    if (!isOpen) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
 
         try {
-            const { error } = await supabase
-                .from('staff')
-                .update({
-                    name: formData.name,
-                    hourly_wage: formData.hourly_wage,
-                    dependents: formData.dependents,
-                    tax_category: formData.tax_category,
-                    pin: formData.pin,
-                    note: formData.note,
-                    // Save Custom Items
-                    allowance1_name: formData.allowance1_name || null, allowance1_value: formData.allowance1_value || null,
-                    allowance2_name: formData.allowance2_name || null, allowance2_value: formData.allowance2_value || null,
-                    allowance3_name: formData.allowance3_name || null, allowance3_value: formData.allowance3_value || null,
-                    deduction1_name: formData.deduction1_name || null, deduction1_value: formData.deduction1_value || null,
-                    deduction2_name: formData.deduction2_name || null, deduction2_value: formData.deduction2_value || null,
-                })
-                .eq('id', staff.id);
+            if (mode === 'create') {
+                let resolvedCompanyId = companyId;
 
-            if (error) throw error;
+                // 1. If prop is missing, try to fetch existing company
+                if (!resolvedCompanyId) {
+                    console.log('Company ID missing in props, fetching from DB...');
+                    const { data: existingCompany } = await supabase
+                        .from('companies')
+                        .select('id')
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (existingCompany) {
+                        resolvedCompanyId = existingCompany.id;
+                        console.log('Found existing company:', resolvedCompanyId);
+                    }
+                }
+
+                // 2. If still missing, FORCE create "自社"
+                if (!resolvedCompanyId) {
+                    console.log('No company found, creating new default company...');
+                    const { data: newCompany, error: createError } = await supabase
+                        .from('companies')
+                        .insert({ name: '自社' })
+                        .select('id')
+                        .single();
+
+                    if (createError || !newCompany) {
+                        console.error('CRITICAL: Failed to create default company:', createError);
+                        throw new Error(`会社情報の作成に失敗しました: ${createError?.message || 'Unknown error'}`);
+                    }
+                    resolvedCompanyId = newCompany.id;
+                    console.log('Created new company:', resolvedCompanyId);
+                }
+
+                // 3. Final Check
+                if (!resolvedCompanyId) {
+                    throw new Error('Company ID could not be resolved or created.');
+                }
+
+                // 4. Insert Staff with resolved ID
+                // 4. Insert Staff with resolved ID
+                const { error } = await supabase
+                    .from('staff')
+                    .insert({
+                        company_id: resolvedCompanyId,
+                        name: formData.name,
+                        hourly_wage: formData.hourly_wage,
+                        dependents: formData.dependents,
+                        tax_category: formData.tax_category,
+                        pin: formData.pin,
+                        note: formData.note,
+                        role: 'staff',
+                        // Custom Items (Using _amount as per DB schema)
+                        allowance1_name: formData.allowance1_name || null, allowance1_amount: formData.allowance1_value || 0,
+                        allowance2_name: formData.allowance2_name || null, allowance2_amount: formData.allowance2_value || 0,
+                        allowance3_name: formData.allowance3_name || null, allowance3_amount: formData.allowance3_value || 0,
+                        deduction1_name: formData.deduction1_name || null, deduction1_amount: formData.deduction1_value || 0,
+                        deduction2_name: formData.deduction2_name || null, deduction2_amount: formData.deduction2_value || 0,
+                    });
+                if (error) throw error;
+            } else {
+                if (!staff) return;
+                const { error } = await supabase
+                    .from('staff')
+                    .update({
+                        name: formData.name,
+                        hourly_wage: formData.hourly_wage,
+                        dependents: formData.dependents,
+                        tax_category: formData.tax_category,
+                        pin: formData.pin,
+                        note: formData.note,
+                        // Save Custom Items (Using _amount as per DB schema)
+                        allowance1_name: formData.allowance1_name || null, allowance1_amount: formData.allowance1_value || 0,
+                        allowance2_name: formData.allowance2_name || null, allowance2_amount: formData.allowance2_value || 0,
+                        allowance3_name: formData.allowance3_name || null, allowance3_amount: formData.allowance3_value || 0,
+                        deduction1_name: formData.deduction1_name || null, deduction1_amount: formData.deduction1_value || 0,
+                        deduction2_name: formData.deduction2_name || null, deduction2_amount: formData.deduction2_value || 0,
+                    })
+                    .eq('id', staff.id);
+                if (error) throw error;
+            }
 
             onSave();
             onClose();
-        } catch (error) {
-            console.error('Error updating staff:', error);
-            alert('更新に失敗しました');
+        } catch (error: any) {
+            console.error('Error updating/creating staff:', error.message || error);
+            alert(`保存に失敗しました: ${error.message || '不明なエラー'}`);
         } finally {
             setLoading(false);
         }
@@ -112,7 +194,9 @@ export default function StaffEditModal({ isOpen, onClose, staff, onSave }: Staff
             <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex justify-between items-center p-6 border-b border-gray-200">
-                    <h3 className="text-xl font-bold text-gray-900">従業員マスタ編集</h3>
+                    <h3 className="text-xl font-bold text-slate-950">
+                        {mode === 'create' ? '従業員を新規登録' : '従業員マスタ編集'}
+                    </h3>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                         <X size={24} />
                     </button>
@@ -165,8 +249,19 @@ export default function StaffEditModal({ isOpen, onClose, staff, onSave }: Staff
                                     type="text"
                                     maxLength={4}
                                     value={formData.pin}
-                                    onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
+                                    onChange={(e) => {
+                                        const val = e.target.value
+                                            .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)) // Full-width to half-width
+                                            .replace(/[^0-9]/g, ''); // Remove non-numeric
+                                        setFormData({ ...formData, pin: val });
+                                    }}
                                     className="w-24 border border-blue-300 rounded-lg px-3 py-3 focus:ring-2 focus:ring-blue-500 font-mono text-center tracking-widest font-bold text-blue-900"
+                                    placeholder="0000"
+                                    onFocus={() => {
+                                        if (formData.pin === '0000') {
+                                            setFormData({ ...formData, pin: '' });
+                                        }
+                                    }}
                                 />
                                 <button
                                     type="button"
