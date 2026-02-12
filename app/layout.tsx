@@ -17,7 +17,12 @@ export const metadata: Metadata = {
   title: "Order Salary System",
   description: "Order and salary management system",
   icons: {
-    icon: '/app-icon.png?v=1',
+    icon: [
+      { url: '/app-icon.png?v=4', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/app-icon.png?v=4' },
+    ],
   },
 };
 
