@@ -5,7 +5,24 @@ import { supabase } from '@/utils/supabaseClient';
 import { Database } from '@/types/supabase';
 import { X, Save, PlusCircle, MinusCircle } from 'lucide-react';
 
-type Staff = Database['public']['Tables']['staff']['Row'];
+type Staff = Database['public']['Tables']['staff']['Row'] & {
+    note?: string | null;
+    allowance1_name?: string | null;
+    allowance1_value?: number | null; // NOTE: DB column might be different (e.g. allowance1_amount), but UI uses this? checking prop usage...
+    allowance1_amount?: number | null;
+    allowance2_name?: string | null;
+    allowance2_value?: number | null;
+    allowance2_amount?: number | null;
+    allowance3_name?: string | null;
+    allowance3_value?: number | null;
+    allowance3_amount?: number | null;
+    deduction1_name?: string | null;
+    deduction1_value?: number | null;
+    deduction1_amount?: number | null;
+    deduction2_name?: string | null;
+    deduction2_value?: number | null;
+    deduction2_amount?: number | null;
+};
 
 interface StaffEditModalProps {
     isOpen: boolean;
