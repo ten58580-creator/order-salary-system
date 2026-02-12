@@ -50,7 +50,7 @@ async function main() {
     const { error: deleteError } = await supabase.rpc('exec_sql', { sql: deleteSQL });
 
     if (deleteError) {
-        console.log('Delete via RPC error (trying direct delete):', delete error.message);
+        console.log('Delete via RPC error (trying direct delete):', deleteError.message);
 
         // Try direct delete
         const { error: directDeleteError } = await supabase
