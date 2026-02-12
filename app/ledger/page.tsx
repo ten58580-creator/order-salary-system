@@ -12,6 +12,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 type Staff = Database['public']['Tables']['staff']['Row'];
 // type Timecard = Database['public']['Tables']['timecards']['Row'];
 
+const COMPANY_NAME = "株式会社TEN&A"; // 自社名
+
 interface LedgerEntry {
     staff: Staff;
     totalHours: number;
@@ -130,124 +132,200 @@ function LedgerPageContent() {
         router.push(`/?month=${monthStr}`);
     };
 
+    const handlePrint = () => {
+        window.print();
+    };
+
     return (
-        <DashboardLayout>
-            <div className="mb-6 no-print">
-                <button onClick={goBack} className="flex items-center text-gray-500 hover:text-gray-700 mb-4">
-                    <ArrowLeft size={20} className="mr-1" /> ダッシュボードへ戻る
-                </button>
-            </div>
+        <>
+            <DashboardLayout>
+                <div className="mb-6 no-print">
+                    <button onClick={goBack} className="flex items-center text-gray-500 hover:text-gray-700 mb-4">
+                        <ArrowLeft size={20} className="mr-1" /> ダッシュボードへ戻る
+                    </button>
+                </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
-                <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div className="flex items-center space-x-3">
-                        <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
-                            <FileText size={24} />
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div className="flex items-center space-x-3">
+                            <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+                                <FileText size={24} />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-800">賃金台帳</h2>
+                                <p className="text-gray-500 text-sm">源泉徴収税額を含む月次集計</p>
+                            </div>
                         </div>
+
+                        <div className="flex items-center space-x-3 bg-gray-50 p-1 rounded-lg no-print">
+                            <button onClick={() => navigateMonth('prev')} className="p-1 hover:bg-white rounded shadow-sm text-gray-600">
+                                <ChevronLeft size={20} />
+                            </button>
+                            <span className="font-bold text-gray-800 w-32 text-center">
+                                {format(currentDate, 'yyyy年 MM月')}
+                            </span>
+                            <button onClick={() => navigateMonth('next')} className="p-1 hover:bg-white rounded shadow-sm text-gray-600">
+                                <ChevronRight size={20} />
+                            </button>
+                            <button onClick={fetchData} className="p-1 hover:bg-white rounded shadow-sm text-gray-600 ml-2">
+                                <RefreshCw size={18} />
+                            </button>
+                        </div>
+
+
+
+                        <div className="flex space-x-3 no-print">
+                            <button className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm transition">
+                                <Save size={18} />
+                                <span>DB保存</span>
+                            </button>
+                            <button onClick={handlePrint} className="flex items-center space-x-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 shadow-sm transition">
+                                <Printer size={18} />
+                                <span>印刷 / PDF保存</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {loading ? (
+                    <div className="text-center py-12 text-gray-500">読み込み中...</div>
+                ) : (
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-200">
                         <div>
-                            <h2 className="text-xl font-bold text-gray-800">賃金台帳</h2>
-                            <p className="text-gray-500 text-sm">源泉徴収税額を含む月次集計</p>
+                            <table className="min-w-full divide-y divide-gray-100" style={{ borderCollapse: 'collapse' }}>
+                                <thead style={{ backgroundColor: '#f9fafb' }}>
+                                    <tr>
+                                        <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider" style={{ color: '#6b7280' }}>氏名</th>
+                                        <th className="px-6 py-4 text-right text-xs font-medium uppercase tracking-wider" style={{ color: '#6b7280' }}>労働時間</th>
+                                        <th className="px-6 py-4 text-right text-xs font-medium uppercase tracking-wider" style={{ color: '#6b7280' }}>総支給額</th>
+                                        <th className="px-6 py-4 text-right text-xs font-medium uppercase tracking-wider" style={{ color: '#6b7280' }}>所得税</th>
+                                        <th className="px-6 py-4 text-right text-xs font-medium uppercase tracking-wider" style={{ color: '#6b7280' }}>差引支給額</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100" style={{ backgroundColor: '#ffffff' }}>
+                                    {entries.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} className="px-6 py-8 text-center" style={{ color: '#6b7280' }}>データがありません</td>
+                                        </tr>
+                                    ) : (
+                                        entries.map((entry) => (
+                                            <tr key={entry.staff.id} className="break-inside-avoid" style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                <td className="px-6 py-4 whitespace-nowrap font-medium" style={{ color: '#111827' }}>
+                                                    {entry.staff.name}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-right" style={{ color: '#374151' }}>
+                                                    {entry.totalHours.toFixed(2)} h
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-right" style={{ color: '#374151' }}>
+                                                    ¥{entry.grossWage.toLocaleString()}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-right" style={{ color: '#dc2626' }}>
+                                                    ¥{entry.incomeTax.toLocaleString()}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-right font-bold" style={{ color: '#111827' }}>
+                                                    ¥{entry.netPay.toLocaleString()}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                    {/* Total Row */}
+                                    {entries.length > 0 && (
+                                        <tr className="font-bold border-t-2" style={{ backgroundColor: '#f3f4f6', borderColor: '#d1d5db' }}>
+                                            <td className="px-6 py-4 whitespace-nowrap" style={{ color: '#111827' }}>
+                                                合計
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right" style={{ color: '#111827' }}>
+                                                {entries.reduce((sum, e) => sum + e.totalHours, 0).toFixed(2)} h
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right" style={{ color: '#111827' }}>
+                                                {entries.reduce((sum, e) => sum + e.grossWage, 0).toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right" style={{ color: '#dc2626' }}>
+                                                {entries.reduce((sum, e) => sum + e.incomeTax, 0).toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right" style={{ color: '#111827' }}>
+                                                {entries.reduce((sum, e) => sum + e.netPay, 0).toLocaleString()}
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
+                )}
+            </DashboardLayout>
 
-                    <div className="flex items-center space-x-3 bg-gray-50 p-1 rounded-lg no-print">
-                        <button onClick={() => navigateMonth('prev')} className="p-1 hover:bg-white rounded shadow-sm text-gray-600">
-                            <ChevronLeft size={20} />
-                        </button>
-                        <span className="font-bold text-gray-800 w-32 text-center">
-                            {format(currentDate, 'yyyy年 MM月')}
-                        </span>
-                        <button onClick={() => navigateMonth('next')} className="p-1 hover:bg-white rounded shadow-sm text-gray-600">
-                            <ChevronRight size={20} />
-                        </button>
-                        <button onClick={fetchData} className="p-1 hover:bg-white rounded shadow-sm text-gray-600 ml-2">
-                            <RefreshCw size={18} />
-                        </button>
-                    </div>
-
-                    {/* Printable Month Header (Visible only in print) */}
-                    <div className="hidden print-only text-2xl font-bold text-center mb-4">
-                        {format(currentDate, 'yyyy年 MM月')} 賃金台帳
-                    </div>
-
-                    <div className="flex space-x-3 no-print">
-                        <button className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm transition">
-                            <Save size={18} />
-                            <span>DB保存</span>
-                        </button>
-                        <button onClick={() => window.print()} className="flex items-center space-x-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 shadow-sm transition">
-                            <Printer size={18} />
-                            <span>印刷 / PDF</span>
-                        </button>
+            {/* Dedicated Print/PDF View */}
+            <div className="hidden print:block w-full">
+                <div className="print-only-header">
+                    <h1>賃金台帳</h1>
+                    <div className="meta">
+                        <p>{COMPANY_NAME}</p>
+                        <p>対象月: {format(currentDate, 'yyyy年 MM月')}</p>
                     </div>
                 </div>
-            </div>
 
-            {loading ? (
-                <div className="text-center py-12 text-gray-500">読み込み中...</div>
-            ) : (
-                <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-200">
-                    <table className="min-w-full divide-y divide-gray-100">
-                        <thead className="bg-gray-50">
+
+                <table className="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr>
+                            <th className="w-[30%]">氏名</th>
+                            <th className="text-right">労働時間</th>
+                            <th className="text-right">総支給額</th>
+                            <th className="text-right">所得税</th>
+                            <th className="text-right">差引支給額</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {entries.length === 0 ? (
                             <tr>
-                                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">氏名</th>
-                                <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">労働時間</th>
-                                <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">総支給額</th>
-                                <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">所得税</th>
-                                <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">差引支給額</th>
+                                <td colSpan={5} className="py-8 text-center" style={{ color: '#6b7280' }}>データがありません</td>
                             </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-100">
-                            {entries.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500">データがありません</td>
-                                </tr>
-                            ) : (
-                                entries.map((entry) => (
-                                    <tr key={entry.staff.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-                                            {entry.staff.name}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-gray-700">
-                                            {entry.totalHours.toFixed(2)} h
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-gray-700">
-                                            ¥{entry.grossWage.toLocaleString()}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-red-600">
-                                            ¥{entry.incomeTax.toLocaleString()}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right font-bold text-gray-900">
-                                            ¥{entry.netPay.toLocaleString()}
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                            {/* Total Row */}
-                            {entries.length > 0 && (
-                                <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
-                                    <td className="px-6 py-4 whitespace-nowrap text-gray-900">
-                                        合計
+                        ) : (
+                            entries.map((entry) => (
+                                <tr key={entry.staff.id} className="break-inside-avoid">
+                                    <td className="font-medium" style={{ color: '#000000' }}>
+                                        {entry.staff.name}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-gray-900">
-                                        {entries.reduce((sum, e) => sum + e.totalHours, 0).toFixed(2)} h
+                                    <td className="text-right" style={{ color: '#000000' }}>
+                                        {entry.totalHours.toFixed(2)} h
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-gray-900">
-                                        ¥{entries.reduce((sum, e) => sum + e.grossWage, 0).toLocaleString()}
+                                    <td className="text-right" style={{ color: '#000000' }}>
+                                        ¥{entry.grossWage.toLocaleString()}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-red-600">
-                                        ¥{entries.reduce((sum, e) => sum + e.incomeTax, 0).toLocaleString()}
+                                    <td className="text-right" style={{ color: '#dc2626' }}>
+                                        ¥{entry.incomeTax.toLocaleString()}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-gray-900">
-                                        ¥{entries.reduce((sum, e) => sum + e.netPay, 0).toLocaleString()}
+                                    <td className="text-right font-bold" style={{ color: '#000000' }}>
+                                        ¥{entry.netPay.toLocaleString()}
                                     </td>
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </DashboardLayout>
+                            ))
+                        )}
+                        {/* Total Row */}
+                        {entries.length > 0 && (
+                            <tr>
+                                <td className="text-left font-black text-lg border-t-2 border-black">
+                                    合計
+                                </td>
+                                <td className="text-right font-mono font-black text-lg border-t-2 border-black">
+                                    {entries.reduce((sum, e) => sum + e.totalHours, 0).toFixed(2)} h
+                                </td>
+                                <td className="text-right font-mono font-black text-lg border-t-2 border-black">
+                                    {entries.reduce((sum, e) => sum + e.grossWage, 0).toLocaleString()}
+                                </td>
+                                <td className="text-right font-mono font-black text-lg border-t-2 border-black">
+                                    {entries.reduce((sum, e) => sum + e.incomeTax, 0).toLocaleString()}
+                                </td>
+                                <td className="text-right font-mono font-black text-lg border-t-2 border-black">
+                                    {entries.reduce((sum, e) => sum + e.netPay, 0).toLocaleString()}
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </>
     );
 }
 

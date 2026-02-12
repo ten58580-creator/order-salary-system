@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { supabase } from '@/utils/supabaseClient';
-import { Building, Plus, Edit, Trash2, Eye, EyeOff, ChevronLeft } from 'lucide-react';
+import { Building, Plus, Edit, Trash2, Eye, EyeOff, ChevronLeft, Settings, Lock } from 'lucide-react';
 import Link from 'next/link';
+
+import AdminGuard from '@/components/AdminGuard';
 
 type Company = {
     id: string;
@@ -18,13 +20,30 @@ type Company = {
 };
 
 export default function CompaniesPage() {
+    return (
+        <AdminGuard>
+            <CompaniesContent />
+        </AdminGuard>
+    );
+}
+
+function CompaniesContent() {
     const [companies, setCompanies] = useState<Company[]>([]);
     const [loading, setLoading] = useState(true);
     const [showPins, setShowPins] = useState<{ [key: string]: boolean }>({});
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+    const [activeTab, setActiveTab] = useState<'companies' | 'settings'>('companies');
 
-    // Form state
+    // Admin PIN Form State
+    const [pinForm, setPinForm] = useState({
+        currentPin: '',
+        newPin: '',
+        confirmPin: ''
+    });
+    const [pinLoading, setPinLoading] = useState(false);
+
+    // Form state (Company)
     const [formData, setFormData] = useState({
         name: '',
         address: '',
@@ -53,8 +72,46 @@ export default function CompaniesPage() {
         setLoading(false);
     };
 
+    const handlePinChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPinLoading(true);
+
+        if (pinForm.newPin !== pinForm.confirmPin) {
+            alert('新しいPINコードが一致しません');
+            setPinLoading(false);
+            return;
+        }
+
+        if (!/^\d{4,8}$/.test(pinForm.newPin)) {
+            alert('PINコードは4〜8桁の数字で入力してください');
+            setPinLoading(false);
+            return;
+        }
+
+        try {
+            const { data, error } = await supabase.rpc('change_admin_pin', {
+                current_pin: pinForm.currentPin,
+                new_pin: pinForm.newPin
+            });
+
+            if (error) throw error;
+
+            alert('管理者PINコードを変更しました');
+            setPinForm({ currentPin: '', newPin: '', confirmPin: '' });
+        } catch (error: any) {
+            console.error('Error changing PIN:', error);
+            alert('PINコードの変更に失敗しました: ' + (error.message || '不明なエラー'));
+        } finally {
+            setPinLoading(false);
+        }
+    };
+
+    // ... (Existing handleSubmit, handleDelete, openModal, closeModal, togglePinVisibility functions) ...
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Note: Authentication is handled by AdminGuard (PIN check) on the client side.
+        // The database RLS must allow 'anon' role for this to work without Supabase Auth.
 
         // Validate PIN (4-6 digits)
         if (formData.pin_code && !/^\d{4,6}$/.test(formData.pin_code)) {
@@ -159,82 +216,174 @@ export default function CompaniesPage() {
                         <ChevronLeft size={20} className="mr-1 group-hover:-translate-x-1 transition" />
                         ダッシュボードに戻る
                     </Link>
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center mb-6">
                         <div className="flex items-center">
                             <Building className="text-blue-600 mr-3" size={32} />
-                            <h1 className="text-3xl font-black text-slate-950">会社管理</h1>
+                            <h1 className="text-3xl font-black text-slate-950">会社管理・設定</h1>
                         </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex space-x-2 border-b border-gray-200 mb-6">
                         <button
-                            onClick={() => openModal()}
-                            className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition flex items-center"
+                            onClick={() => setActiveTab('companies')}
+                            className={`px-6 py-3 font-bold text-sm rounded-t-lg transition ${activeTab === 'companies'
+                                ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                }`}
                         >
-                            <Plus size={18} className="mr-1" />
-                            新規登録
+                            <Building size={16} className="inline mr-2" />
+                            会社一覧
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('settings')}
+                            className={`px-6 py-3 font-bold text-sm rounded-t-lg transition ${activeTab === 'settings'
+                                ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                }`}
+                        >
+                            <Settings size={16} className="inline mr-2" />
+                            管理者設定
                         </button>
                     </div>
                 </div>
 
-                {/* Company List Table */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">会社名</th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">担当者</th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">電話番号</th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">PINコード</th>
-                                <th className="px-6 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {companies.map((company) => (
-                                <tr key={company.id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-950">{company.name}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{company.person_in_charge || '-'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{company.phone || '-'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <div className="flex items-center space-x-2">
-                                            <span className="font-mono font-bold text-slate-950">
-                                                {company.pin_code ? (showPins[company.id] ? company.pin_code : '****') : '未設定'}
-                                            </span>
-                                            {company.pin_code && (
-                                                <button
-                                                    onClick={() => togglePinVisibility(company.id)}
-                                                    className="text-gray-400 hover:text-gray-600"
-                                                >
-                                                    {showPins[company.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                                                </button>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                                        <button
-                                            onClick={() => openModal(company)}
-                                            className="text-blue-600 hover:text-blue-800"
-                                        >
-                                            <Edit size={18} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(company.id, company.name)}
-                                            className="text-red-600 hover:text-red-800"
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                {activeTab === 'companies' ? (
+                    <>
+                        <div className="flex justify-end mb-4">
+                            <button
+                                onClick={() => openModal()}
+                                className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition flex items-center"
+                            >
+                                <Plus size={18} className="mr-1" />
+                                新規登録
+                            </button>
+                        </div>
 
-                {/* Modal */}
+                        {/* Company List Table */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">会社名</th>
+                                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">担当者</th>
+                                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">電話番号</th>
+                                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">PINコード</th>
+                                        <th className="px-6 py-3 text-right text-xs font-bold text-gray-600 uppercase tracking-wider">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {companies.map((company) => (
+                                        <tr key={company.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-950">{company.name}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{company.person_in_charge || '-'}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{company.phone || '-'}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="font-mono font-bold text-slate-950">
+                                                        {company.pin_code ? (showPins[company.id] ? company.pin_code : '****') : '未設定'}
+                                                    </span>
+                                                    {company.pin_code && (
+                                                        <button
+                                                            onClick={() => togglePinVisibility(company.id)}
+                                                            className="text-gray-400 hover:text-gray-600"
+                                                        >
+                                                            {showPins[company.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                                                <button
+                                                    onClick={() => openModal(company)}
+                                                    className="text-blue-600 hover:text-blue-800"
+                                                >
+                                                    <Edit size={18} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(company.id, company.name)}
+                                                    className="text-red-600 hover:text-red-800"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                ) : (
+                    /* Admin Settings Tab */
+                    <div className="bg-slate-50 rounded-xl p-8 max-w-2xl border border-slate-200">
+                        <h2 className="text-xl font-black text-slate-900 mb-6 flex items-center">
+                            <Lock className="mr-2 text-slate-600" size={24} />
+                            管理者PINコード設定
+                        </h2>
+                        <form onSubmit={handlePinChange} className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">現在のPINコード</label>
+                                <input
+                                    type="password"
+                                    inputMode="numeric"
+                                    required
+                                    value={pinForm.currentPin}
+                                    onChange={(e) => setPinForm({ ...pinForm, currentPin: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
+                                    placeholder="現在のPINを入力"
+                                />
+                            </div>
+                            <div className="border-t border-gray-200 my-6"></div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">新しいPINコード（4〜8桁）</label>
+                                <input
+                                    type="password"
+                                    inputMode="numeric"
+                                    required
+                                    pattern="\d{4,8}"
+                                    value={pinForm.newPin}
+                                    onChange={(e) => setPinForm({ ...pinForm, newPin: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
+                                    placeholder="新しいPINを入力"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">新しいPINコード（確認）</label>
+                                <input
+                                    type="password"
+                                    inputMode="numeric"
+                                    required
+                                    pattern="\d{4,8}"
+                                    value={pinForm.confirmPin}
+                                    onChange={(e) => setPinForm({ ...pinForm, confirmPin: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
+                                    placeholder="もう一度入力"
+                                />
+                            </div>
+                            <div className="pt-4">
+                                <button
+                                    type="submit"
+                                    disabled={pinLoading}
+                                    className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition shadow-lg w-full flex justify-center items-center disabled:opacity-50"
+                                >
+                                    {pinLoading ? '更新中...' : 'PINコードを変更する'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                )}
+
+                {/* Modal (Existing) */}
                 {isModalOpen && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        {/* ... Modal Content ... */}
                         <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 p-6">
                             <h2 className="text-2xl font-black text-slate-950 mb-6">
                                 {editingCompany ? '会社情報編集' : '新規会社登録'}
                             </h2>
                             <form onSubmit={handleSubmit} className="space-y-4">
+                                {/* ... Form Fields ... */}
+                                {/* Need to copy form fields or keep them if replacing block allows */}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">会社名 *</label>
                                     <input
@@ -245,6 +394,8 @@ export default function CompaniesPage() {
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-950 font-bold"
                                     />
                                 </div>
+                                {/* Include other fields or rely on existing code structure if I'm replacing whole component... */}
+                                {/* Wait, I'm replacing existing CompaniesContent completely. I must include all form fields inside the Modal block. */}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">担当者名</label>
                                     <input
@@ -280,7 +431,6 @@ export default function CompaniesPage() {
                                         pattern="\d{4,6}"
                                         value={formData.pin_code}
                                         onChange={(e) => {
-                                            // Convert full-width to half-width and remove non-digits
                                             const halfWidth = e.target.value
                                                 .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
                                                 .replace(/\D/g, '');

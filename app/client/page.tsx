@@ -9,6 +9,8 @@ import { Plus, Package, Monitor } from 'lucide-react';
 import ProductRegistrationModal from '@/components/ProductRegistrationModal';
 import ProductEditModal from '@/components/ProductEditModal';
 import ProductListModal from '@/components/ProductListModal';
+import OrderHistoryModal from '@/components/OrderHistoryModal';
+import ClientOrderDailyList from '@/components/ClientOrderDailyList';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -22,7 +24,12 @@ export default function ClientDashboard() {
     const [products, setProducts] = useState<Product[]>([]);
     const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
     const [isProductListOpen, setIsProductListOpen] = useState(false);
+    const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+    // View State
+    const [viewMode, setViewMode] = useState<'calendar' | 'daily'>('calendar');
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
     useEffect(() => {
         async function init() {
@@ -100,6 +107,13 @@ export default function ClientDashboard() {
                 {userCompanyId && (
                     <div className="px-4 sm:px-0 flex justify-end space-x-3">
                         <button
+                            onClick={() => setIsOrderHistoryOpen(true)}
+                            className="bg-white text-gray-700 border border-gray-200 px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 hover:border-gray-300 transition flex items-center"
+                        >
+                            <Package className="mr-2 text-gray-500" size={18} />
+                            注文履歴一覧
+                        </button>
+                        <button
                             onClick={() => setIsProductListOpen(true)}
                             className="bg-white text-gray-700 border border-gray-200 px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 hover:border-gray-300 transition flex items-center"
                         >
@@ -116,10 +130,26 @@ export default function ClientDashboard() {
                     </div>
                 )}
 
-                {/* Calendar Section */}
+                {/* Content Section (Calendar or Daily List) */}
                 <div className="px-4 sm:px-0">
                     {userCompanyId ? (
-                        <OrderCalendar companyId={userCompanyId} />
+                        <div className="transition-all duration-300">
+                            {viewMode === 'calendar' ? (
+                                <OrderCalendar
+                                    companyId={userCompanyId}
+                                    onSelectDate={(date) => {
+                                        setSelectedDate(date);
+                                        setViewMode('daily');
+                                    }}
+                                />
+                            ) : (
+                                <ClientOrderDailyList
+                                    date={selectedDate}
+                                    companyId={userCompanyId}
+                                    onBack={() => setViewMode('calendar')}
+                                />
+                            )}
+                        </div>
                     ) : (
                         <div className="p-6 bg-yellow-50 text-yellow-800 rounded-lg font-bold">
                             会社情報が紐づけられていません。管理者に連絡してください。
@@ -129,10 +159,17 @@ export default function ClientDashboard() {
             </main>
 
             {/* Modals */}
+            <OrderHistoryModal
+                isOpen={isOrderHistoryOpen}
+                onClose={() => setIsOrderHistoryOpen(false)}
+                companyId={userCompanyId}
+                companyName={companyName}
+            />
             <ProductListModal
                 isOpen={isProductListOpen}
                 onClose={() => setIsProductListOpen(false)}
                 products={products}
+                companyName={companyName} // Added prop
                 onSelectProduct={(p) => setEditingProduct(p)}
                 onProductUpdated={() => fetchProducts(userCompanyId)}
             />

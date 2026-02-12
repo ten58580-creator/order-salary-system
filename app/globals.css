@@ -39,28 +39,118 @@ body {
   @page {
     margin: 10mm;
     size: landscape;
-    /* Ledger often wide */
   }
 
   body {
-    background: white;
-    color: black;
+    background: white !important;
+    color: black !important;
+    font-family: "Noto Sans JP", sans-serif;
+    /* Ensure Japanese font if available, fallback safely */
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: visible !important;
   }
 
+  /* Hide all UI elements usually */
   header,
   footer,
   nav,
-  .no-print {
+  aside,
+  button,
+  .no-print,
+  [role="dialog"] button,
+  /* Hide modal close/action buttons */
+  [data-print-hidden="true"] {
     display: none !important;
   }
 
-  .print-only {
-    display: block !important;
+  /* Reset layout for print */
+  main,
+  [role="main"],
+  .fixed,
+  .absolute {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform: none !important;
+    box-shadow: none !important;
+    background: white !important;
   }
 
-  /* Force background colors for readability if browser allows */
+  /* Ensure tables print nicely */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 10pt;
+  }
+
+  th,
+  td {
+    border: 1px solid #ddd !important;
+    padding: 4px 8px !important;
+    color: black !important;
+    background: white !important;
+  }
+
+  th {
+    background-color: #f3f4f6 !important;
+    /* light gray for headers */
+    font-weight: bold !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Specialized Print Header Class */
+  .print-only-header {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 10px;
+    width: 100%;
+  }
+
+  .print-only-header h1 {
+    font-size: 24pt;
+    font-weight: bold;
+    margin: 0;
+  }
+
+  .print-only-header .meta {
+    text-align: right;
+    font-size: 10pt;
+  }
+
+  /* Ensure modals/dialogs take up full page when printed */
+  [role="dialog"] {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    display: block !important;
+    /* Ensure content is visible */
+  }
+
+  /* If printing from a modal, hide the background overlay/backdrop */
+  .fixed.inset-0.bg-black {
+    display: none !important;
+  }
+
+  /* Force background colors for readability */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+}
+
+/* Base state for print headers (hidden on screen) */
+.print-only-header {
+  display: none;
 }

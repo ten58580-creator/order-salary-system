@@ -2,178 +2,190 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabaseClient';
-import { Database } from '@/types/supabase';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Package } from 'lucide-react';
-import OrderEntryModal from './OrderEntryModal';
-import ProductRegistrationModal from './ProductRegistrationModal';
-
-type Order = Database['public']['Tables']['orders']['Row'] & { unit_price?: number };
-type Product = Database['public']['Tables']['products']['Row'];
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, addMonths, subMonths, isToday } from 'date-fns';
+import { ja } from 'date-fns/locale';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2 } from 'lucide-react';
+import Link from 'next/link';
 
 interface OrderCalendarProps {
-    companyId: string;
+    onSelectDate?: (date: Date) => void;
+    companyId?: string;
 }
 
-export default function OrderCalendar({ companyId }: OrderCalendarProps) {
-    const [currentDate, setCurrentDate] = useState(new Date());
-    const [orders, setOrders] = useState<Order[]>([]);
-    const [productsCache, setProductsCache] = useState<Map<string, { name: string, price: number }>>(new Map());
+type DailyStats = {
+    count: number;
+    totalPk: number;
+};
 
-    // Modal State
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-    const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+export default function OrderCalendar({ onSelectDate, companyId }: OrderCalendarProps) {
+    const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [monthlyStats, setMonthlyStats] = useState<Map<string, DailyStats>>(new Map());
+    const [loading, setLoading] = useState(false);
+    const [totalOrders, setTotalOrders] = useState(0);
+    const [totalAmount, setTotalAmount] = useState(0);
 
     useEffect(() => {
-        if (companyId) {
-            fetchProducts();
-            fetchOrders();
-        }
-    }, [currentDate, companyId]);
+        fetchMonthlyData();
+    }, [currentMonth, companyId]);
 
-    const fetchProducts = async () => {
-        const { data } = await supabase.from('products').select('id, name, unit_price').eq('company_id', companyId);
-        if (data) {
-            const map = new Map();
-            data.forEach(p => map.set(p.id, { name: p.name, price: p.unit_price }));
-            setProductsCache(map);
-        }
-    };
+    const fetchMonthlyData = async () => {
+        setLoading(true);
+        const start = startOfMonth(currentMonth);
+        const end = endOfMonth(currentMonth);
 
-    const fetchOrders = async () => {
-        const start = format(startOfMonth(currentDate), 'yyyy-MM-dd');
-        const end = format(endOfMonth(currentDate), 'yyyy-MM-dd');
-
-        const { data, error } = await supabase
+        let query = supabase
             .from('orders')
-            .select('*')
-            .eq('company_id', companyId)
-            .gte('order_date', start)
-            .lte('order_date', end);
+            .select('order_date, quantity, products(unit_price)')
+            .gte('order_date', format(start, 'yyyy-MM-dd'))
+            .lte('order_date', format(end, 'yyyy-MM-dd'));
 
-        if (data) setOrders(data);
+        if (companyId) {
+            query = query.eq('company_id', companyId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('Error fetching monthly orders:', error);
+            setLoading(false);
+            return;
+        }
+
+        const stats = new Map<string, DailyStats>();
+        let monthTotalCount = 0;
+        let monthTotalAmount = 0;
+
+        data?.forEach((order: any) => {
+            const dateStr = order.order_date;
+            const current = stats.get(dateStr) || { count: 0, totalPk: 0 };
+            stats.set(dateStr, {
+                count: current.count + 1,
+                totalPk: current.totalPk + order.quantity
+            });
+            monthTotalCount++;
+            if (order.products?.unit_price) {
+                monthTotalAmount += order.quantity * order.products.unit_price;
+            }
+        });
+
+        setMonthlyStats(stats);
+        setTotalOrders(monthTotalCount);
+        setTotalAmount(monthTotalAmount);
+        setLoading(false);
     };
 
-    const handleDayClick = (day: Date, order?: Order) => {
-        setSelectedDate(day);
-        setSelectedOrder(order || null);
-        setIsModalOpen(true);
-    };
-
-    const navigateMonth = (dir: 'prev' | 'next') => {
-        setCurrentDate(dir === 'next' ? addMonths(currentDate, 1) : subMonths(currentDate, 1));
-    };
-
-    // Calendar Grid Gen
     const days = eachDayOfInterval({
-        start: startOfMonth(currentDate),
-        end: endOfMonth(currentDate)
+        start: startOfWeek(startOfMonth(currentMonth)),
+        end: endOfWeek(endOfMonth(currentMonth))
     });
 
-    const startDayOfWeek = getDay(startOfMonth(currentDate)); // 0: Sun, 1: Mon...
-    const emptySlots = Array(startDayOfWeek).fill(null);
-
-    const monthlyTotal = orders.reduce((sum, order) => {
-        return sum + ((order.unit_price ?? 0) * order.quantity);
-    }, 0);
+    const weeks = [];
+    for (let i = 0; i < days.length; i += 7) {
+        weeks.push(days.slice(i, i + 7));
+    }
 
     return (
-        <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-                <div className="flex items-end space-x-6">
-                    <div className="flex flex-col">
-                        <span className="text-xs font-bold text-gray-500 mb-1">今月の発注総額</span>
-                        <span className="text-3xl font-extrabold text-blue-600 tracking-tight leading-none">
-                            ¥{monthlyTotal.toLocaleString()}
-                        </span>
-                    </div>
-
-                </div>
-
-                <div className="flex items-center space-x-4">
-                    <h2 className="text-xl font-bold text-gray-900">
-                        {format(currentDate, 'yyyy年 MM月')}
-                    </h2>
-                    <div className="flex space-x-2">
-                        <button onClick={() => navigateMonth('prev')} className="p-2 bg-white border-2 border-slate-200 rounded-lg hover:bg-slate-100 text-slate-900 transition"><ChevronLeft size={24} strokeWidth={2.5} /></button>
-                        <button onClick={() => navigateMonth('next')} className="p-2 bg-white border-2 border-slate-200 rounded-lg hover:bg-slate-100 text-slate-900 transition"><ChevronRight size={24} strokeWidth={2.5} /></button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Grid */}
-            <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-100 text-center text-xs font-bold text-gray-500 py-2">
-                <div className="text-red-500">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div className="text-blue-500">土</div>
-            </div>
-            <div className="grid grid-cols-7 bg-white">
-                {emptySlots.map((_, i) => <div key={`empty-${i}`} className="border-b border-r border-gray-100 h-32 bg-gray-50/30" />)}
-
-                {days.map(day => {
-                    const dayStr = format(day, 'yyyy-MM-dd');
-                    const dayOrders = orders.filter(o => o.order_date === dayStr);
-                    const isToday = isSameDay(day, new Date());
-
-                    const dayTotal = dayOrders.reduce((sum, order) => {
-                        return sum + ((order.unit_price ?? 0) * order.quantity);
-                    }, 0);
-
-                    return (
-                        <div
-                            key={dayStr}
-                            onClick={() => handleDayClick(day)}
-                            className={`border-b border-r border-gray-100 h-32 p-2 relative hover:bg-blue-50 transition cursor-pointer flex flex-col ${isToday ? 'bg-blue-50/50' : ''}`}
-                        >
-                            <div className="flex justify-between items-start">
-                                <span className={`text-sm font-bold ${getDay(day) === 0 ? 'text-red-500' : getDay(day) === 6 ? 'text-blue-500' : 'text-gray-700'}`}>
-                                    {format(day, 'd')}
-                                </span>
-                                {dayTotal > 0 && (
-                                    <span className="text-xs font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                                        ¥{dayTotal.toLocaleString()}
-                                    </span>
-                                )}
-                            </div>
-
-                            <div className="mt-1 space-y-1 overflow-y-auto flex-1">
-                                {dayOrders.map(order => (
-                                    <div
-                                        key={order.id}
-                                        onClick={(e) => { e.stopPropagation(); handleDayClick(day, order); }}
-                                        className="text-xs bg-blue-100 text-blue-800 px-1.5 py-1 rounded border border-blue-200 truncate hover:bg-blue-200"
-                                    >
-                                        <div className="font-bold truncate text-blue-950 mb-0.5">{productsCache.get(order.product_id)?.name || '不明な商品'}</div>
-                                        <div className="text-right font-extrabold text-blue-800">{order.quantity} pk</div>
-                                    </div>
-                                ))}
-                                {dayOrders.length === 0 && (
-                                    <div className="h-full flex items-center justify-center text-gray-300">
-                                        <Plus size={20} />
-                                    </div>
-                                )}
-                            </div>
+            <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="flex gap-8">
+                    <div>
+                        <div className="text-sm text-slate-500 font-bold mb-1">今月の受注総数</div>
+                        <div className="text-3xl font-black text-slate-900 flex items-baseline">
+                            {totalOrders} <span className="text-sm ml-1 text-slate-500">件</span>
                         </div>
-                    );
-                })}
+                    </div>
+                    <div>
+                        <div className="text-sm text-slate-500 font-bold mb-1">今月の受注総額 (概算)</div>
+                        <div className="text-3xl font-black text-blue-600 flex items-baseline">
+                            ¥{totalAmount.toLocaleString()}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex items-center bg-slate-50 p-1 rounded-xl border border-slate-200">
+                    <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-2 hover:bg-white rounded-lg transition shadow-sm hover:shadow text-slate-600">
+                        <ChevronLeft size={20} />
+                    </button>
+                    <div className="mx-6 text-xl font-black text-slate-900 flex items-center">
+                        {format(currentMonth, 'yyyy年 MM月', { locale: ja })}
+                    </div>
+                    <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-2 hover:bg-white rounded-lg transition shadow-sm hover:shadow text-slate-600">
+                        <ChevronRight size={20} />
+                    </button>
+                </div>
             </div>
 
-            <OrderEntryModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                date={selectedDate}
-                companyId={companyId}
-                existingOrder={selectedOrder}
-                onSave={fetchOrders}
-            />
+            {/* Calendar Grid */}
+            <div className="w-full">
+                {/* Day Headers */}
+                <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
+                    {['日', '月', '火', '水', '木', '金', '土'].map((day, i) => (
+                        <div key={day} className={`p-3 text-center text-sm font-bold ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-slate-500'}`}>
+                            {day}
+                        </div>
+                    ))}
+                </div>
 
-            <ProductRegistrationModal
-                isOpen={isProductModalOpen}
-                onClose={() => setIsProductModalOpen(false)}
-                companyId={companyId}
-                onProductRegistered={async () => { await fetchProducts(); }}
-            />
+                {/* Weeks */}
+                <div className="divide-y divide-slate-100">
+                    {weeks.map((week, weekIndex) => (
+                        <div key={weekIndex} className="grid grid-cols-7 divide-x divide-slate-100">
+                            {week.map((day) => {
+                                const dateStr = format(day, 'yyyy-MM-dd');
+                                const stat = monthlyStats.get(dateStr);
+                                const isCurrentMonth = isSameMonth(day, currentMonth);
+                                const isTodayDate = isToday(day);
+
+                                return (
+                                    <div
+                                        key={dateStr}
+                                        onClick={() => onSelectDate?.(day)}
+                                        className={`
+                                            min-h-[120px] p-2 transition cursor-pointer relative group
+                                            ${!isCurrentMonth ? 'bg-slate-50/50 text-slate-300' : 'bg-white hover:bg-blue-50/50'}
+                                            ${isTodayDate ? 'bg-blue-50/30' : ''}
+                                        `}
+                                    >
+                                        <div className={`
+                                            text-sm font-bold mb-2 w-7 h-7 flex items-center justify-center rounded-full
+                                            ${isTodayDate ? 'bg-blue-600 text-white' : isCurrentMonth ? 'text-slate-700' : 'text-slate-300'}
+                                        `}>
+                                            {format(day, 'd')}
+                                        </div>
+
+                                        {/* Stats Badges */}
+                                        {stat && (
+                                            <div className="space-y-1.5 animate-in fade-in zoom-in duration-200">
+                                                <div className="flex items-center justify-between bg-blue-100/50 px-2 py-1 rounded text-xs font-bold text-blue-900 border border-blue-100">
+                                                    <span className="text-[10px] text-blue-400">受注</span>
+                                                    <span>{stat.count}件</span>
+                                                </div>
+                                                <div className="flex items-center justify-between bg-emerald-100/50 px-2 py-1 rounded text-xs font-bold text-emerald-900 border border-emerald-100">
+                                                    <span className="text-[10px] text-emerald-500">予定</span>
+                                                    <span>{stat.totalPk.toLocaleString()}pk</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!stat && isCurrentMonth && (
+                                            <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                                                <span className="text-slate-200 text-2xl">+</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {loading && (
+                <div className="absolute inset-0 bg-white/50 flex items-center justify-center backdrop-blur-sm">
+                    <Loader2 className="animate-spin text-blue-600" size={32} />
+                </div>
+            )}
         </div>
     );
 }

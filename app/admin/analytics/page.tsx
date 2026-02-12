@@ -55,7 +55,17 @@ type Staff = {
     hourly_wage: number;
 };
 
+import AdminGuard from '@/components/AdminGuard';
+
 export default function AnalyticsPage() {
+    return (
+        <AdminGuard>
+            <AnalyticsContent />
+        </AdminGuard>
+    );
+}
+
+function AnalyticsContent() {
     const [mounted, setMounted] = useState(false);
 
     const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);

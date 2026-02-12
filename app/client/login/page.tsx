@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { supabase } from '@/utils/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { KeyRound, ArrowRight } from 'lucide-react';
-import Link from 'next/link';
 
 export default function ClientLoginPage() {
     const router = useRouter();
@@ -108,17 +107,9 @@ export default function ClientLoginPage() {
                         </button>
                     </div>
 
-                    <div className="text-center mt-4">
-                        <Link
-                            href="/login"
-                            className="text-sm text-gray-500 hover:text-gray-700 font-bold"
-                        >
-                            管理者の方はこちら →
-                        </Link>
-                    </div>
                 </form>
 
-                <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <div className="mt-8 p-4 bg-blue-50 rounded-lg">
                     <p className="text-xs text-blue-800 font-bold text-center">
                         PINコードをお忘れの場合は、管理者にお問い合わせください
                     </p>

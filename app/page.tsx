@@ -14,6 +14,10 @@ import StaffEditModal from '@/components/StaffEditModal';
 import DailyDetailModal from '@/components/DailyDetailModal';
 import ConfirmationModal from '@/components/ConfirmationModal';
 
+import AdminPinModal from '@/components/AdminPinModal';
+import { useAdminGuard } from '@/components/AdminGuardContext';
+import { Lock } from 'lucide-react';
+
 type Staff = Database['public']['Tables']['staff']['Row'] & {
   is_archived?: boolean;
 };
@@ -36,9 +40,24 @@ interface DailyDetailData {
   totalCost: number;
 }
 
+import AdminGuard from '@/components/AdminGuard';
+
+export default function DashboardPage() {
+  return (
+    <AdminGuard>
+      <Suspense fallback={<div className="text-center py-12 text-slate-950 font-bold">読み込み中...</div>}>
+        <DashboardContent />
+      </Suspense>
+    </AdminGuard>
+  );
+}
+
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isUnlocked } = useAdminGuard();
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+
   const queryMonth = searchParams.get('month');
 
   // Date
@@ -495,6 +514,10 @@ function DashboardContent() {
 
   return (
     <DashboardLayout>
+      {isPinModalOpen && (
+        <AdminPinModal onClose={() => setIsPinModalOpen(false)} />
+      )}
+
       {/* Header - Unified Design */}
       <div className="mb-8 bg-white border-b border-slate-200 pb-4">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -555,195 +578,124 @@ function DashboardContent() {
       {loading ? (
         <div className="text-center py-12 text-slate-500 font-bold">データを読み込み中...</div>
       ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <StatsCard label="従業員数 (稼働中)" value={`${totalStaff} 名`} icon={Users} badge="ACTIVE" />
-            <StatsCard label={`総労働時間 (${format(currentDate, 'yyyy-MM')})`} value={`${totalHoursAll.toFixed(1)} h`} icon={Clock} />
-            <StatsCard label={`人件費合計 (${format(currentDate, 'yyyy-MM')})`} value={`¥${totalLaborCost.toLocaleString()}`} icon={Banknote} badge={totalLaborCost > 1000000 ? 'HIGH' : undefined} />
-          </div>
+        <div className="relative">
+          {/* Main Content - Dimmed if locked */}
 
-          <div className="flex flex-col lg:flex-row gap-6">
-            <div className="flex-1">
-              <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
-                <div className="flex items-center gap-4 w-full md:w-auto">
-                  <h3 className="font-black text-lg text-slate-950 whitespace-nowrap">従業員一覧</h3>
-                  <div className="relative w-full max-w-xs">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Search size={16} className="text-slate-400" />
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="名前またはPINで検索"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm w-full bg-white text-slate-950 font-bold focus:ring-2 focus:ring-blue-500 outline-none transition"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-3 w-full md:w-auto justify-end">
-                  <button
-                    onClick={() => setShowArchived(!showArchived)}
-                    className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center transition border ${showArchived ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                  >
-                    <Archive size={14} className="mr-1" />
-                    {showArchived ? 'アーカイブを表示中' : 'アーカイブを表示'}
-                  </button>
-                  <button
-                    onClick={handleCreateStaff}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow flex items-center transition"
-                  >
-                    <Users size={16} className="mr-2" />
-                    従業員を追加
-                  </button>
-                </div>
-              </div>
-              <div className="text-right mb-2">
-                <Link href={`/ledger?month=${currentMonthStr}`} className="text-blue-600 text-sm hover:underline font-bold">賃金台帳を表示 &rarr;</Link>
-              </div>
-
-              <div className="bg-white shadow rounded-xl overflow-hidden border border-slate-100">
-                <table className="min-w-full divide-y divide-slate-100">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-4 py-4 text-center">
-                        <input type="checkbox" checked={selectedStaffIds.size === filteredSummaries.length && filteredSummaries.length > 0} onChange={toggleSelectAll} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">氏名</th>
-                      <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">時給</th>
-                      <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">PIN</th>
-                      <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
-                        {format(currentDate, 'M月')}の状況
-                      </th>
-                      <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-100">
-                    {filteredSummaries.length === 0 ? (
-                      <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500 font-bold">表示するデータがありません</td></tr>
-                    ) : (
-                      filteredSummaries.map(({ staff, totalHours, totalWage }) => (
-                        <tr key={staff.id} className={`hover:bg-slate-50 transition ${staff.is_archived ? 'bg-slate-50 opacity-70' : ''}`}>
-                          <td className="px-4 py-4 text-center">
-                            <input type="checkbox" checked={selectedStaffIds.has(staff.id)} onChange={() => toggleSelect(staff.id)} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <Link href={`/attendance/${staff.id}?month=${currentMonthStr}`} className="flex items-center group">
-                              <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold mr-3 transition ${staff.is_archived ? 'bg-slate-200 text-slate-500' : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200'}`}>
-                                {staff.is_archived ? <Archive size={18} /> : staff.name.charAt(0)}
-                              </div>
-                              <div>
-                                <div className={`font-black transition text-lg ${staff.is_archived ? 'text-slate-500' : 'text-slate-950 group-hover:text-blue-600'}`}>{staff.name}</div>
-                                {staff.is_archived && <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold">アーカイブ済</span>}
-                              </div>
-                            </Link>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-slate-950 font-bold">¥{(staff.hourly_wage || 0).toLocaleString()}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center text-slate-500 font-mono font-bold text-sm bg-slate-50 rounded-md py-1 mx-2 inline-block">{staff.pin || '----'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-bold text-slate-950">{totalHours.toFixed(1)}h / <span className="text-slate-950">¥{totalWage.toLocaleString()}</span></div>
-                            <div className="text-xs mt-1">
-                              {totalHours > 80 ? <span className="text-red-500 flex items-center font-bold"><AlertCircle size={12} className="mr-1" /> 週20時間超過</span> : <span className="text-green-500 flex items-center font-bold">✔ 正常</span>}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div className="flex justify-center items-center space-x-2">
-                              <button onClick={() => handleEditStaff(staff)} className="text-slate-400 hover:text-blue-600 p-2 rounded-lg hover:bg-blue-50 transition" title="編集">
-                                <Edit size={18} />
-                              </button>
-                              <button
-                                onClick={() => handleArchiveStaff(staff)}
-                                className={`p-2 rounded-lg transition ${staff.is_archived ? 'text-green-600 bg-green-50 hover:bg-green-100' : 'text-slate-400 hover:text-orange-600 hover:bg-orange-50'}`}
-                                title={staff.is_archived ? "アーカイブ解除" : "アーカイブ"}
-                              >
-                                <Archive size={18} />
-                              </button>
-                              {!staff.is_archived && (
-                                <button
-                                  onClick={() => handleDeleteStaff(staff)}
-                                  className="text-slate-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition"
-                                  title="削除"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+          {/* Main Content - Dimmed if locked */}
+          <div className={`transition-all duration-300 ${!isUnlocked ? 'filter grayscale opacity-40 pointer-events-none' : ''}`}>
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <StatsCard label="従業員数 (稼働中)" value={`${totalStaff} 名`} icon={Users} badge="ACTIVE" />
+              <StatsCard label={`総労働時間 (${format(currentDate, 'yyyy-MM')})`} value={`${totalHoursAll.toFixed(1)} h`} icon={Clock} />
+              <StatsCard label={`人件費合計 (${format(currentDate, 'yyyy-MM')})`} value={`¥${totalLaborCost.toLocaleString()}`} icon={Banknote} badge={totalLaborCost > 1000000 ? 'HIGH' : undefined} />
             </div>
 
-            <div className="w-full lg:w-80 space-y-6">
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <div className="flex items-center space-x-2 text-indigo-600 font-black mb-4">
-                  <Settings size={20} />
-                  <span>システム操作</span>
-                </div>
-                <div className="space-y-3">
-                  <Link href="/admin/system" className="w-full flex items-center justify-start px-4 py-3 bg-slate-50 rounded-lg text-slate-700 font-bold hover:bg-slate-100 transition">
-                    <Settings size={18} className="mr-3 text-slate-400" />
-                    システム設定
-                  </Link>
-                  <Link href="/admin/products" className="w-full flex items-center justify-start px-4 py-3 bg-slate-50 rounded-lg text-slate-700 font-bold hover:bg-slate-100 transition">
-                    <Package size={18} className="mr-3 text-slate-400" />
-                    商品・単価管理
-                  </Link>
-                  <Link href="/admin/orders" className="w-full flex items-center justify-start px-4 py-3 bg-slate-50 rounded-lg text-slate-700 font-bold hover:bg-slate-100 transition">
-                    <Factory size={18} className="mr-3 text-slate-400" />
-                    製造現場管理
-                  </Link>
-                  {selectedStaffIds.size > 0 ? (
-                    <Link href={getPayslipUrl()} className="w-full flex items-center justify-start px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-black border border-blue-200 shadow-sm">
-                      <Banknote size={18} className="mr-3 text-blue-500" />
-                      明細発行 ({selectedStaffIds.size}名)
-                    </Link>
-                  ) : (
-                    <button disabled className="w-full flex items-center justify-start px-4 py-3 bg-slate-50 text-slate-400 rounded-lg font-bold cursor-not-allowed border border-slate-200">
-                      <Banknote size={18} className="mr-3 text-slate-400" />
-                      明細発行 (0名)
-                    </button>
-                  )}
-                  {/* CSV Download Button moved to Header */}
-                </div>
-              </div>
+            <div className="flex flex-col lg:flex-row gap-6">
+              <div className="flex-1">
+                <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+                  <div className="flex items-center gap-4 w-full md:w-auto">
+                    <h3 className="font-black text-lg text-slate-950 whitespace-nowrap">従業員一覧</h3>
+                    <div className="relative w-full max-w-xs">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Search size={16} className="text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="名前またはPINで検索"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm w-full bg-white text-slate-950 font-bold focus:ring-2 focus:ring-blue-500 outline-none transition"
+                      />
+                    </div>
+                  </div>
 
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-black text-slate-800 text-sm">日別労働状況 (サマリー)</h3>
-                  <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded font-bold">人数タップで詳細</span>
+                  <div className="flex items-center space-x-3 w-full md:w-auto justify-end">
+                    <button
+                      onClick={() => setShowArchived(!showArchived)}
+                      className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center transition border ${showArchived ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                    >
+                      <Archive size={14} className="mr-1" />
+                      {showArchived ? 'アーカイブを表示中' : 'アーカイブを表示'}
+                    </button>
+                    <button
+                      onClick={handleCreateStaff}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow flex items-center transition"
+                    >
+                      <Users size={16} className="mr-2" />
+                      従業員を追加
+                    </button>
+                  </div>
                 </div>
-                <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="text-right mb-2">
+                  <Link href={`/ledger?month=${currentMonthStr}`} className="text-blue-600 text-sm hover:underline font-bold">賃金台帳を表示 &rarr;</Link>
+                </div>
+
+                <div className="bg-white shadow rounded-xl overflow-hidden border border-slate-100">
                   <table className="min-w-full divide-y divide-slate-100">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-black text-slate-600">日付</th>
-                        <th className="px-2 py-2 text-center text-xs font-black text-slate-600">人数</th>
-                        <th className="px-3 py-2 text-right text-xs font-black text-slate-600">人件費</th>
+                        <th className="px-4 py-4 text-center">
+                          <input type="checkbox" checked={selectedStaffIds.size === filteredSummaries.length && filteredSummaries.length > 0} onChange={toggleSelectAll} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">氏名</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">時給</th>
+                        <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">PIN</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                          {format(currentDate, 'M月')}の状況
+                        </th>
+                        <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">操作</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-100">
-                      {dailyStats.length === 0 ? (
-                        <tr><td colSpan={3} className="px-3 py-4 text-center text-xs text-slate-500 font-bold">データなし</td></tr>
+                      {filteredSummaries.length === 0 ? (
+                        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500 font-bold">表示するデータがありません</td></tr>
                       ) : (
-                        dailyStats.map((stat) => (
-                          <tr key={stat.date} className="hover:bg-slate-50">
-                            <td className="px-3 py-2 text-xs font-black text-slate-800">
-                              {format(parse(stat.date, 'yyyy-MM-dd', new Date()), 'MM/dd (eee)')}
+                        filteredSummaries.map(({ staff, totalHours, totalWage }) => (
+                          <tr key={staff.id} className={`hover:bg-slate-50 transition ${staff.is_archived ? 'bg-slate-50 opacity-70' : ''}`}>
+                            <td className="px-4 py-4 text-center">
+                              <input type="checkbox" checked={selectedStaffIds.has(staff.id)} onChange={() => toggleSelect(staff.id)} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
                             </td>
-                            <td className="px-2 py-2 text-center">
-                              <button
-                                onClick={() => handleOpenDetail(stat)}
-                                className="text-xs bg-blue-100 text-blue-700 px-3 py-0.5 rounded-full hover:bg-blue-600 hover:text-white transition font-black min-w-[30px]"
-                              >
-                                {stat.totalCount}
-                              </button>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <Link href={`/attendance/${staff.id}?month=${currentMonthStr}`} className="flex items-center group">
+                                <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold mr-3 transition ${staff.is_archived ? 'bg-slate-200 text-slate-500' : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200'}`}>
+                                  {staff.is_archived ? <Archive size={18} /> : staff.name.charAt(0)}
+                                </div>
+                                <div>
+                                  <div className={`font-black transition text-lg ${staff.is_archived ? 'text-slate-500' : 'text-slate-950 group-hover:text-blue-600'}`}>{staff.name}</div>
+                                  {staff.is_archived && <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold">アーカイブ済</span>}
+                                </div>
+                              </Link>
                             </td>
-                            <td className="px-3 py-2 text-right text-xs text-slate-600 font-mono font-bold">
-                              ¥{(stat.totalCost / 1000).toFixed(1)}k
+                            <td className="px-6 py-4 whitespace-nowrap text-slate-950 font-bold">¥{(staff.hourly_wage || 0).toLocaleString()}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-slate-500 font-mono font-bold text-sm bg-slate-50 rounded-md py-1 mx-2 inline-block">{staff.pin || '----'}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-bold text-slate-950">{totalHours.toFixed(1)}h / <span className="text-slate-950">¥{totalWage.toLocaleString()}</span></div>
+                              <div className="text-xs mt-1">
+                                {totalHours > 80 ? <span className="text-red-500 flex items-center font-bold"><AlertCircle size={12} className="mr-1" /> 週20時間超過</span> : <span className="text-green-500 flex items-center font-bold">✔ 正常</span>}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="flex justify-center items-center space-x-2">
+                                <button onClick={() => handleEditStaff(staff)} className="text-slate-400 hover:text-blue-600 p-2 rounded-lg hover:bg-blue-50 transition" title="編集">
+                                  <Edit size={18} />
+                                </button>
+                                <button
+                                  onClick={() => handleArchiveStaff(staff)}
+                                  className={`p-2 rounded-lg transition ${staff.is_archived ? 'text-green-600 bg-green-50 hover:bg-green-100' : 'text-slate-400 hover:text-orange-600 hover:bg-orange-50'}`}
+                                  title={staff.is_archived ? "アーカイブ解除" : "アーカイブ"}
+                                >
+                                  <Archive size={18} />
+                                </button>
+                                {!staff.is_archived && (
+                                  <button
+                                    onClick={() => handleDeleteStaff(staff)}
+                                    className="text-slate-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition"
+                                    title="削除"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -753,19 +705,96 @@ function DashboardContent() {
                 </div>
               </div>
 
-              <div className="bg-indigo-600 p-6 rounded-xl shadow-lg text-white">
-                <div className="flex items-center mb-4">
-                  <Clock className="mr-2" size={20} />
-                  <span className="font-black">労働ルール通知</span>
+              <div className="w-full lg:w-80 space-y-6">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                  <div className="flex items-center space-x-2 text-indigo-600 font-black mb-4">
+                    <Settings size={20} />
+                    <span>システム操作</span>
+                  </div>
+                  <div className="space-y-3">
+                    <Link href="/admin/system" className="w-full flex items-center justify-start px-4 py-3 bg-slate-50 rounded-lg text-slate-700 font-bold hover:bg-slate-100 transition">
+                      <Settings size={18} className="mr-3 text-slate-400" />
+                      システム設定
+                    </Link>
+                    <Link href="/admin/products" className="w-full flex items-center justify-start px-4 py-3 bg-slate-50 rounded-lg text-slate-700 font-bold hover:bg-slate-100 transition">
+                      <Package size={18} className="mr-3 text-slate-400" />
+                      商品・単価管理
+                    </Link>
+                    <Link href="/admin/orders" className="w-full flex items-center justify-start px-4 py-3 bg-slate-50 rounded-lg text-slate-700 font-bold hover:bg-slate-100 transition">
+                      <Factory size={18} className="mr-3 text-slate-400" />
+                      製造現場管理
+                    </Link>
+                    {selectedStaffIds.size > 0 ? (
+                      <Link href={getPayslipUrl()} className="w-full flex items-center justify-start px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-black border border-blue-200 shadow-sm">
+                        <Banknote size={18} className="mr-3 text-blue-500" />
+                        明細発行 ({selectedStaffIds.size}名)
+                      </Link>
+                    ) : (
+                      <button disabled className="w-full flex items-center justify-start px-4 py-3 bg-slate-50 text-slate-400 rounded-lg font-bold cursor-not-allowed border border-slate-200">
+                        <Banknote size={18} className="mr-3 text-slate-400" />
+                        明細発行 (0名)
+                      </button>
+                    )}
+                    {/* CSV Download Button moved to Header */}
+                  </div>
                 </div>
-                <div className="bg-indigo-500/50 p-3 rounded-lg text-sm mb-2">
-                  <div className="text-indigo-200 text-xs mb-1 font-bold">週労働時間上限設定</div>
-                  <div className="font-black">パートタイム 20時間以内</div>
+
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-black text-slate-800 text-sm">日別労働状況 (サマリー)</h3>
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded font-bold">人数タップで詳細</span>
+                  </div>
+                  <div className="overflow-hidden rounded-lg border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-100">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-black text-slate-600">日付</th>
+                          <th className="px-2 py-2 text-center text-xs font-black text-slate-600">人数</th>
+                          <th className="px-3 py-2 text-right text-xs font-black text-slate-600">人件費</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-slate-100">
+                        {dailyStats.length === 0 ? (
+                          <tr><td colSpan={3} className="px-3 py-4 text-center text-xs text-slate-500 font-bold">データなし</td></tr>
+                        ) : (
+                          dailyStats.map((stat) => (
+                            <tr key={stat.date} className="hover:bg-slate-50">
+                              <td className="px-3 py-2 text-xs font-black text-slate-800">
+                                {format(parse(stat.date, 'yyyy-MM-dd', new Date()), 'MM/dd (eee)')}
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                <button
+                                  onClick={() => handleOpenDetail(stat)}
+                                  className="text-xs bg-blue-100 text-blue-700 px-3 py-0.5 rounded-full hover:bg-blue-600 hover:text-white transition font-black min-w-[30px]"
+                                >
+                                  {stat.totalCount}
+                                </button>
+                              </td>
+                              <td className="px-3 py-2 text-right text-xs text-slate-600 font-mono font-bold">
+                                ¥{(stat.totalCost / 1000).toFixed(1)}k
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="bg-indigo-600 p-6 rounded-xl shadow-lg text-white">
+                  <div className="flex items-center mb-4">
+                    <Clock className="mr-2" size={20} />
+                    <span className="font-black">労働ルール通知</span>
+                  </div>
+                  <div className="bg-indigo-500/50 p-3 rounded-lg text-sm mb-2">
+                    <div className="text-indigo-200 text-xs mb-1 font-bold">週労働時間上限設定</div>
+                    <div className="font-black">パートタイム 20時間以内</div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       <StaffEditModal
@@ -802,10 +831,4 @@ function DashboardContent() {
 
 
 
-export default function Dashboard() {
-  return (
-    <Suspense fallback={<div className="text-center py-12 text-slate-950 font-bold">読み込み中...</div>}>
-      <DashboardContent />
-    </Suspense>
-  );
-}
+

@@ -16,6 +16,8 @@ export default function ProductRegistrationModal({ isOpen, onClose, companyId, o
     const [yomigana, setYomigana] = useState('');
     const [price, setPrice] = useState('');
     const [unit, setUnit] = useState('pk');
+    const [category, setCategory] = useState(''); // Added
+    const [description, setDescription] = useState(''); // Added
     const [loading, setLoading] = useState(false);
 
     // For robust auto-yomigana
@@ -25,13 +27,15 @@ export default function ProductRegistrationModal({ isOpen, onClose, companyId, o
     const yomiganaMap = useRef<Map<string, string>>(new Map([['', '']]));
     const isManualChange = useRef(false);
 
-    const units = ['pk', 'cs', 'kg', 'g', 'L', '袋', '箱', '個', '本', 'セット', '束'];
+    const units = ['pk', 'cs', 'kg', 'g', '尾', '袋', '箱', '個', '本', 'セット', '束'];
 
     const resetForm = () => {
         setName('');
         setYomigana('');
         setPrice('');
         setUnit('pk');
+        setCategory('');
+        setDescription('');
         lastHiragana.current = '';
         isComposing.current = false;
         compositionCursor.current = '';
@@ -137,7 +141,9 @@ export default function ProductRegistrationModal({ isOpen, onClose, companyId, o
                     name: name,
                     yomigana: yomigana,
                     unit_price: Number(price),
-                    unit: unit
+                    unit: unit,
+                    category: category || null, // Added
+                    description: description || null // Added
                 }])
                 .select()
                 .single();
@@ -187,7 +193,7 @@ export default function ProductRegistrationModal({ isOpen, onClose, companyId, o
                             onCompositionUpdate={handleCompositionUpdate}
                             onCompositionEnd={handleCompositionEnd}
                             className="w-full border-2 border-slate-400 rounded-lg p-3 focus:ring-4 focus:ring-blue-100 focus:border-blue-600 font-bold text-slate-900 text-lg placeholder-slate-500 transition-all"
-                            placeholder="例: 特製モンブラン"
+                            placeholder="例: サンエー　鍋セット　大"
                             autoFocus
                         />
                     </div>
@@ -199,7 +205,7 @@ export default function ProductRegistrationModal({ isOpen, onClose, companyId, o
                             value={yomigana}
                             onChange={handleYomiganaChange}
                             className="w-full border-2 border-slate-400 rounded-lg p-3 focus:ring-4 focus:ring-blue-100 focus:border-blue-600 font-medium text-slate-900 placeholder-slate-500 transition-all"
-                            placeholder="例: もんぶらん"
+                            placeholder="例: さんえーなべせっとだい"
                         />
                     </div>
 
@@ -226,6 +232,28 @@ export default function ProductRegistrationModal({ isOpen, onClose, companyId, o
                                 ))}
                             </select>
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">カテゴリー (任意)</label>
+                        <input
+                            type="text"
+                            value={category}
+                            onChange={(e) => setCategory(e.target.value)}
+                            className="w-full border-2 border-slate-400 rounded-lg p-3 focus:ring-4 focus:ring-blue-100 focus:border-blue-600 font-medium text-slate-900 placeholder-slate-500 transition-all"
+                            placeholder="例: 鍋セット"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">備考 (任意)</label>
+                        <textarea
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            className="w-full border-2 border-slate-400 rounded-lg p-3 focus:ring-4 focus:ring-blue-100 focus:border-blue-600 font-medium text-slate-900 placeholder-slate-500 transition-all"
+                            placeholder="例: ラップ破損注意"
+                            rows={2}
+                        />
                     </div>
 
                     <button

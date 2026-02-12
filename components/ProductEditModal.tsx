@@ -6,7 +6,7 @@ import { X, Save, Plus, Trash2 } from 'lucide-react';
 import { Database } from '@/types/supabase';
 import { format } from 'date-fns';
 
-type Product = Database['public']['Tables']['products']['Row'];
+type Product = Database['public']['Tables']['products']['Row'] & { category?: string | null; description?: string | null };
 type ProductPrice = Database['public']['Tables']['product_prices']['Row'];
 
 interface ProductEditModalProps {
@@ -20,6 +20,8 @@ export default function ProductEditModal({ isOpen, onClose, product, onSave }: P
     const [name, setName] = useState('');
     const [yomigana, setYomigana] = useState('');
     const [unit, setUnit] = useState('pk');
+    const [category, setCategory] = useState(''); // Added
+    const [description, setDescription] = useState(''); // Added
     const [prices, setPrices] = useState<ProductPrice[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -54,6 +56,8 @@ export default function ProductEditModal({ isOpen, onClose, product, onSave }: P
             setName(product.name);
             setYomigana(product.yomigana || '');
             setUnit(product.unit || 'pk');
+            setCategory(product.category || ''); // Added
+            setDescription(product.description || ''); // Added
             fetchPrices(product.id);
             // Default new start date to Today
             setNewStartDate(format(new Date(), 'yyyy-MM-dd'));
@@ -87,6 +91,8 @@ export default function ProductEditModal({ isOpen, onClose, product, onSave }: P
                 name,
                 yomigana,
                 unit,
+                category: category || null, // Added
+                description: description || null, // Added
                 wholesale_price: Number(wholesalePrice),
                 cost_price: Number(costPrice),
                 container_cost: Number(containerCost),
@@ -200,6 +206,26 @@ export default function ProductEditModal({ isOpen, onClose, product, onSave }: P
                                 >
                                     {units.map(u => <option key={u} value={u}>{u}</option>)}
                                 </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">カテゴリー</label>
+                                <input
+                                    type="text"
+                                    value={category}
+                                    onChange={(e) => setCategory(e.target.value)}
+                                    className="w-full border-2 border-slate-400 rounded-lg p-3 font-medium text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
+                                    placeholder="例: 和菓子"
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-sm font-bold text-slate-700 mb-1">備考</label>
+                                <textarea
+                                    value={description}
+                                    onChange={(e) => setDescription(e.target.value)}
+                                    className="w-full border-2 border-slate-400 rounded-lg p-3 font-medium text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
+                                    placeholder="規格や詳細など"
+                                    rows={2}
+                                />
                             </div>
                         </div>
                     </div>

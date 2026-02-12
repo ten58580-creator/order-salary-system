@@ -9,10 +9,20 @@ import Link from 'next/link';
 import ProductRegistrationModal from '@/components/ProductRegistrationModal';
 import ProductEditModal from '@/components/ProductEditModal';
 
+import AdminGuard from '@/components/AdminGuard';
+
 type Product = Database['public']['Tables']['products']['Row'] & { is_archived?: boolean };
 type Company = Database['public']['Tables']['companies']['Row'];
 
 export default function ProductAdmin() {
+    return (
+        <AdminGuard>
+            <ProductAdminContent />
+        </AdminGuard>
+    );
+}
+
+function ProductAdminContent() {
     const [companies, setCompanies] = useState<Company[]>([]);
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
     const [products, setProducts] = useState<Product[]>([]);

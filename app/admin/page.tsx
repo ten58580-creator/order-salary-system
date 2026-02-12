@@ -1,10 +1,106 @@
+
 'use client';
 
+import React, { useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { ClipboardList, Truck, Package, ArrowRight, BarChart3, Clock, Building } from 'lucide-react';
+import { ClipboardList, Truck, Package, ArrowRight, BarChart3, Clock, Building, Lock } from 'lucide-react';
 import Link from 'next/link';
+import { useAdminGuard } from '@/components/AdminGuardContext';
+import { useRouter } from 'next/navigation';
+import AdminPinModal from '@/components/AdminPinModal';
 
 export default function AdminDashboard() {
+    const { isUnlocked } = useAdminGuard();
+    const router = useRouter();
+    const [pinModalTarget, setPinModalTarget] = useState<string | null>(null);
+
+    // Helper to handle navigation to protected routes
+    const handleProtectedClick = (e: React.MouseEvent, href: string) => {
+        e.preventDefault();
+        if (isUnlocked) {
+            router.push(href);
+        } else {
+            setPinModalTarget(href);
+        }
+    };
+
+    const handlePinSuccess = () => {
+        if (pinModalTarget) {
+            router.push(pinModalTarget);
+            setPinModalTarget(null);
+        }
+    };
+
+    // Card Component for reusability
+    const DashboardCard = ({
+        href,
+        icon: Icon,
+        colorClass,
+        title,
+        description,
+        isProtected = false
+    }: {
+        href: string;
+        icon: any;
+        colorClass: string;
+        title: string;
+        description: string;
+        isProtected?: boolean;
+    }) => {
+        const isLocked = isProtected && !isUnlocked;
+
+        // Base classes
+        let cardClasses = "bg-white rounded-2xl shadow-sm border border-gray-200 p-8 transition-all duration-300 h-full flex flex-col items-center text-center relative overflow-hidden";
+        let iconBgClass = `${colorClass.replace('text-', 'bg-').replace('600', '50')} p-6 rounded-full mb-6 transition-transform duration-300`;
+
+        if (isLocked) {
+            // Lighter overlay style
+            cardClasses += " opacity-100 bg-white cursor-pointer hover:shadow-md";
+        } else {
+            cardClasses += " hover:shadow-xl hover:border-blue-500 group";
+        }
+
+        const content = (
+            <div className={cardClasses} onClick={isLocked ? (e) => handleProtectedClick(e, href) : undefined}>
+                {isLocked && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-slate-50/40 backdrop-blur-[0.5px] z-10 transition-colors duration-300">
+                        <Lock size={64} className="text-slate-300 opacity-70" />
+                    </div>
+                )}
+
+                <div className={`${iconBgClass} ${!isLocked ? 'group-hover:scale-110' : ''}`}>
+                    <Icon size={48} className={colorClass} />
+                </div>
+                <h2 className={`text-2xl font-black mb-3 ${isLocked ? 'text-slate-400' : 'text-slate-900'}`}>{title}</h2>
+                <p className={`font-bold mb-6 flex-grow ${isLocked ? 'text-slate-300' : 'text-gray-500'}`}>
+                    {description}
+                </p>
+                <span className={`flex items-center font-bold ${isLocked ? 'text-slate-300' : colorClass} ${!isLocked ? 'group-hover:underline' : ''}`}>
+                    {isLocked ? (
+                        <>
+                            <Lock size={16} className="mr-2" />
+                            ロック中
+                        </>
+                    ) : (
+                        <>
+                            開く <ArrowRight size={20} className="ml-2" />
+                        </>
+                    )}
+                </span>
+            </div>
+        );
+
+        if (isLocked) {
+            return content; // Div with onClick
+        }
+
+        return (
+            <Link href={href} className="group">
+                {content}
+            </Link>
+        );
+    };
+
     return (
         <DashboardLayout>
             <div className="max-w-5xl mx-auto py-12">
@@ -14,119 +110,85 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    {/* Order Management */}
-                    <Link href="/admin/orders" className="group">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 hover:shadow-xl hover:border-blue-500 transition-all duration-300 h-full flex flex-col items-center text-center">
-                            <div className="bg-blue-50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300">
-                                <ClipboardList size={48} className="text-blue-600" />
-                            </div>
-                            <h2 className="text-2xl font-black text-slate-900 mb-3">受注管理</h2>
-                            <p className="text-gray-500 font-bold mb-6 flex-grow">
-                                各社からの注文状況を確認・編集します。
-                            </p>
-                            <span className="flex items-center text-blue-600 font-bold group-hover:underline">
-                                開く <ArrowRight size={20} className="ml-2" />
-                            </span>
-                        </div>
-                    </Link>
+                    {/* 1. Timecard (Top Left) */}
+                    <DashboardCard
+                        href="/admin/timecard"
+                        icon={Clock}
+                        colorClass="text-pink-600"
+                        title="タイムカード管理"
+                        description="スタッフの出退勤・休憩のリアルタイム打刻。"
+                        isProtected={false} // Open
+                    />
 
-                    {/* Production Instructions */}
-                    <Link href="/admin/production" className="group">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 hover:shadow-xl hover:border-green-500 transition-all duration-300 h-full flex flex-col items-center text-center">
-                            <div className="bg-green-50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300">
-                                <Truck size={48} className="text-green-600" />
-                            </div>
-                            <h2 className="text-2xl font-black text-slate-900 mb-3">製造指示</h2>
-                            <p className="text-gray-500 font-bold mb-6 flex-grow">
-                                本日の製造数と内訳を集計します。
-                            </p>
-                            <span className="flex items-center text-green-600 font-bold group-hover:underline">
-                                開く <ArrowRight size={20} className="ml-2" />
-                            </span>
-                        </div>
-                    </Link>
+                    {/* 2. Production (Center Top) */}
+                    <DashboardCard
+                        href="/admin/production"
+                        icon={Truck}
+                        colorClass="text-green-600"
+                        title="製造指示"
+                        description="本日の製造数と内訳を集計します。"
+                        isProtected={false} // Open
+                    />
 
-                    {/* Product Management */}
-                    <Link href="/admin/products" className="group">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 hover:shadow-xl hover:border-purple-500 transition-all duration-300 h-full flex flex-col items-center text-center">
-                            <div className="bg-purple-50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300">
-                                <Package size={48} className="text-purple-600" />
-                            </div>
-                            <h2 className="text-2xl font-black text-slate-900 mb-3">商品管理</h2>
-                            <p className="text-gray-500 font-bold mb-6 flex-grow">
-                                商品マスタの登録・アーカイブ設定。
-                            </p>
-                            <span className="flex items-center text-purple-600 font-bold group-hover:underline">
-                                開く <ArrowRight size={20} className="ml-2" />
-                            </span>
-                        </div>
-                    </Link>
+                    {/* 3. Orders */}
+                    <DashboardCard
+                        href="/admin/orders"
+                        icon={ClipboardList}
+                        colorClass="text-blue-600"
+                        title="受注管理"
+                        description="各社からの注文状況を確認・編集します。"
+                        isProtected={true}
+                    />
 
-                    {/* Production Analytics */}
-                    <Link href="/admin/analytics" className="group">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 hover:shadow-xl hover:border-cyan-500 transition-all duration-300 h-full flex flex-col items-center text-center">
-                            <div className="bg-cyan-50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300">
-                                <BarChart3 size={48} className="text-cyan-600" />
-                            </div>
-                            <h2 className="text-2xl font-black text-slate-900 mb-3">生産管理（分析）</h2>
-                            <p className="text-gray-500 font-bold mb-6 flex-grow">
-                                生産効率・稼働時間・ガントチャート。
-                            </p>
-                            <span className="flex items-center text-cyan-600 font-bold group-hover:underline">
-                                開く <ArrowRight size={20} className="ml-2" />
-                            </span>
-                        </div>
-                    </Link>
+                    {/* 4. Labor Cost */}
+                    <DashboardCard
+                        href="/" // Labor Cost
+                        icon={ClipboardList}
+                        colorClass="text-orange-600"
+                        title="人件費管理"
+                        description="勤怠管理・給与計算ダッシュボード。"
+                        isProtected={true}
+                    />
 
-                    {/* Labor Cost Management */}
-                    <Link href="/" className="group">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 hover:shadow-xl hover:border-orange-500 transition-all duration-300 h-full flex flex-col items-center text-center">
-                            <div className="bg-orange-50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300">
-                                <ClipboardList size={48} className="text-orange-600" />
-                            </div>
-                            <h2 className="text-2xl font-black text-slate-900 mb-3">人件費管理</h2>
-                            <p className="text-gray-500 font-bold mb-6 flex-grow">
-                                勤怠管理・給与計算ダッシュボード。
-                            </p>
-                            <span className="flex items-center text-orange-600 font-bold group-hover:underline">
-                                開く <ArrowRight size={20} className="ml-2" />
-                            </span>
-                        </div>
-                    </Link>
+                    {/* 5. Production Analytics */}
+                    <DashboardCard
+                        href="/admin/analytics"
+                        icon={BarChart3}
+                        colorClass="text-cyan-600"
+                        title="生産管理（分析）"
+                        description="生産効率・稼働時間・ガントチャート。"
+                        isProtected={true}
+                    />
 
-                    {/* Time Card Management */}
-                    <Link href="/admin/timecard" className="group">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 hover:shadow-xl hover:border-pink-500 transition-all duration-300 h-full flex flex-col items-center text-center">
-                            <div className="bg-pink-50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300">
-                                <Clock size={48} className="text-pink-600" />
-                            </div>
-                            <h2 className="text-2xl font-black text-slate-900 mb-3">タイムカード管理</h2>
-                            <p className="text-gray-500 font-bold mb-6 flex-grow">
-                                スタッフの出退勤・休憩のリアルタイム打刻。
-                            </p>
-                            <span className="flex items-center text-pink-600 font-bold group-hover:underline">
-                                開く <ArrowRight size={20} className="ml-2" />
-                            </span>
-                        </div>
-                    </Link>
+                    {/* 6. Product Management */}
+                    <DashboardCard
+                        href="/admin/products"
+                        icon={Package}
+                        colorClass="text-purple-600"
+                        title="商品管理"
+                        description="商品マスタの登録・アーカイブ設定。"
+                        isProtected={true}
+                    />
 
-                    {/* Company Management */}
-                    <Link href="/admin/companies" className="group">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 hover:shadow-xl hover:border-purple-500 transition-all duration-300 h-full flex flex-col items-center text-center">
-                            <div className="bg-purple-50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300">
-                                <Building size={48} className="text-purple-600" />
-                            </div>
-                            <h2 className="text-2xl font-black text-slate-900 mb-3">会社管理</h2>
-                            <p className="text-gray-500 font-bold mb-6 flex-grow">
-                                依頼側の会社情報・PINコード管理。
-                            </p>
-                            <span className="flex items-center text-purple-600 font-bold group-hover:underline">
-                                開く <ArrowRight size={20} className="ml-2" />
-                            </span>
-                        </div>
-                    </Link>
+                    {/* 7. Company Management */}
+                    <DashboardCard
+                        href="/admin/companies"
+                        icon={Building}
+                        colorClass="text-purple-600"
+                        title="会社管理"
+                        description="依頼側の会社情報・PINコード管理。"
+                        isProtected={true}
+                    />
                 </div>
             </div>
+
+            {/* PIN Modal - Only shows when a target is selected */}
+            {pinModalTarget && (
+                <AdminPinModal
+                    onClose={() => setPinModalTarget(null)}
+                    onSuccess={handlePinSuccess}
+                />
+            )}
         </DashboardLayout>
     );
 }

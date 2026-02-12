@@ -215,7 +215,7 @@ export default function OrderEntryModal({ isOpen, onClose, date, companyId, exis
                                 onFocus={() => !isPast && setIsDropdownOpen(true)}
                                 disabled={isPast}
                                 className={`w-full border border-gray-300 rounded-lg p-3 text-base outline-none transition font-bold text-gray-900 placeholder-gray-400 ${isPast ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'focus:ring-2 focus:ring-blue-600 focus:border-blue-600'}`}
-                                placeholder={isPast ? "過去の注文は編集できません" : "和菓子名を入力または選択..."}
+                                placeholder={isPast ? "過去の注文は編集できません" : "入力または選択..."}
                             />
                             {isDropdownOpen && (
                                 <div className="absolute z-10 w-full bg-white border border-gray-200 mt-1 rounded-lg shadow-xl max-h-64 overflow-y-auto">
