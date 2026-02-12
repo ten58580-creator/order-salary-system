@@ -6,8 +6,24 @@ import { X, Save, Plus, Trash2 } from 'lucide-react';
 import { Database } from '@/types/supabase';
 import { format } from 'date-fns';
 
-type Product = Database['public']['Tables']['products']['Row'] & { category?: string | null; description?: string | null };
-type ProductPrice = Database['public']['Tables']['product_prices']['Row'];
+type Product = Database['public']['Tables']['products']['Row'] & {
+    category?: string | null;
+    description?: string | null;
+    wholesale_price?: number | null;
+    cost_price?: number | null;
+    container_cost?: number | null;
+    wrap_cost?: number | null;
+    seal_cost?: number | null;
+    box_cost?: number | null;
+    other_material_cost?: number | null;
+};
+type ProductPrice = {
+    id: string;
+    product_id: string;
+    unit_price: number;
+    start_date: string;
+    created_at?: string;
+};
 
 interface ProductEditModalProps {
     isOpen: boolean;
