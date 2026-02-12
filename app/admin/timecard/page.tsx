@@ -12,6 +12,7 @@ import { Database } from '@/types/supabase';
 // Types
 type Staff = Database['public']['Tables']['staff']['Row'] & {
     is_archived?: boolean;
+    company_id?: string | null;
 };
 
 type TimeCardStatus = 'clock_in' | 'break_start' | 'break_end' | 'clock_out' | 'unknown';
