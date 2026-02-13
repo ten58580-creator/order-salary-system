@@ -17,30 +17,29 @@ export const metadata: Metadata = {
   title: "Order Salary System",
   description: "Order and salary management system",
   icons: {
-    icons: {
-      icon: [
-        { url: '/app-icon.png?v=2026', type: 'image/png' },
-      ],
-      apple: [
-        { url: '/app-icon.png?v=2026' },
-      ],
-    },
-  };
+    icon: [
+      { url: '/app-icon.png?v=2026', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/app-icon.png?v=2026' },
+    ],
+  },
+};
 
-  export default function RootLayout({
-    children,
-  }: Readonly<{
-    children: React.ReactNode;
-  }>) {
-    return (
-      <html lang="en">
-        <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        >
-          <AdminGuardProvider>
-            {children}
-          </AdminGuardProvider>
-        </body>
-      </html>
-    );
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        <AdminGuardProvider>
+          {children}
+        </AdminGuardProvider>
+      </body>
+    </html>
+  );
 }
