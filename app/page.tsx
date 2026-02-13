@@ -45,9 +45,36 @@ import AdminGuard from '@/components/AdminGuard';
 export default function DashboardPage() {
   return (
     <Suspense fallback={<div className="text-center py-12 text-slate-950 font-bold">読み込み中...</div>}>
-      <DashboardContent />
+      <DashboardGuard>
+        <DashboardContent />
+      </DashboardGuard>
     </Suspense>
   );
+}
+
+
+function DashboardGuard({ children }: { children: React.ReactNode }) {
+  const { isUnlocked } = useAdminGuard();
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    // If mounted and locked, redirect to admin dashboard (where PIN modal can be triggered by clicking again, 
+    // or arguably we could trigger PIN modal here, but user asked "redirect to PIN input OR dashboard".
+    // Redirecting to admin dashboard is safer/easier as it centralizes entry.
+    if (mounted && !isUnlocked) {
+      router.replace('/admin');
+    }
+  }, [isUnlocked, router, mounted]);
+
+  if (!mounted) return null; // Avoid hydration mismatch
+  if (!isUnlocked) return null; // Don't render content while redirecting
+
+  return <>{children}</>;
 }
 
 function DashboardContent() {
