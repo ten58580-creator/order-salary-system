@@ -16,14 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Order Salary System",
   description: "Order and salary management system",
-  icons: {
-    icon: [
-      { url: '/app-icon.png?v=2026', type: 'image/png' },
-    ],
-    apple: [
-      { url: '/app-icon.png?v=2026' },
-    ],
-  },
+  icons: { icon: '/favicon.ico?v=final' },
 };
 
 export default function RootLayout({
