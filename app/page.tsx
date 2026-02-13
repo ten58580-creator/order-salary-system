@@ -44,11 +44,9 @@ import AdminGuard from '@/components/AdminGuard';
 
 export default function DashboardPage() {
   return (
-    <AdminGuard>
-      <Suspense fallback={<div className="text-center py-12 text-slate-950 font-bold">読み込み中...</div>}>
-        <DashboardContent />
-      </Suspense>
-    </AdminGuard>
+    <Suspense fallback={<div className="text-center py-12 text-slate-950 font-bold">読み込み中...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }
 
@@ -581,8 +579,8 @@ function DashboardContent() {
         <div className="relative">
           {/* Main Content - Dimmed if locked */}
 
-          {/* Main Content - Dimmed if locked */}
-          <div className={`transition-all duration-300 ${!isUnlocked ? 'filter grayscale opacity-40 pointer-events-none' : ''}`}>
+          {/* Main Content - Open (Stats are visible) */}
+          <div className="transition-all duration-300">
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <StatsCard label="従業員数 (稼働中)" value={`${totalStaff} 名`} icon={Users} badge="ACTIVE" />
@@ -630,78 +628,95 @@ function DashboardContent() {
                   <Link href={`/ledger?month=${currentMonthStr}`} className="text-blue-600 text-sm hover:underline font-bold">賃金台帳を表示 &rarr;</Link>
                 </div>
 
-                <div className="bg-white shadow rounded-xl overflow-hidden border border-slate-100">
-                  <table className="min-w-full divide-y divide-slate-100">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-4 py-4 text-center">
-                          <input type="checkbox" checked={selectedStaffIds.size === filteredSummaries.length && filteredSummaries.length > 0} onChange={toggleSelectAll} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
-                        </th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">氏名</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">時給</th>
-                        <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">PIN</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
-                          {format(currentDate, 'M月')}の状況
-                        </th>
-                        <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-slate-100">
-                      {filteredSummaries.length === 0 ? (
-                        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500 font-bold">表示するデータがありません</td></tr>
-                      ) : (
-                        filteredSummaries.map(({ staff, totalHours, totalWage }) => (
-                          <tr key={staff.id} className={`hover:bg-slate-50 transition ${staff.is_archived ? 'bg-slate-50 opacity-70' : ''}`}>
-                            <td className="px-4 py-4 text-center">
-                              <input type="checkbox" checked={selectedStaffIds.has(staff.id)} onChange={() => toggleSelect(staff.id)} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <Link href={`/attendance/${staff.id}?month=${currentMonthStr}`} className="flex items-center group">
-                                <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold mr-3 transition ${staff.is_archived ? 'bg-slate-200 text-slate-500' : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200'}`}>
-                                  {staff.is_archived ? <Archive size={18} /> : staff.name.charAt(0)}
+                <div className="bg-white shadow rounded-xl overflow-hidden border border-slate-100 relative">
+                  {!isUnlocked && (
+                    <div className="absolute inset-0 z-10 bg-slate-50/60 backdrop-blur-sm flex items-center justify-center cursor-pointer" onClick={() => setIsPinModalOpen(true)}>
+                      <div className="flex flex-col items-center bg-white p-8 rounded-2xl shadow-xl border border-slate-200 transform transition-transform hover:scale-105">
+                        <div className="bg-slate-100 p-4 rounded-full mb-4">
+                          <Lock size={48} className="text-slate-400" />
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-2">ロックされています</h3>
+                        <p className="text-slate-500 font-bold mb-6 text-center">従業員リストを表示するには<br />PINコードを入力してください</p>
+                        <button className="bg-slate-900 text-white px-6 py-2.5 rounded-lg font-bold shadow hover:bg-slate-800 transition">
+                          ロック解除
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className={!isUnlocked ? 'filter blur-sm select-none' : ''}>
+                    <table className="min-w-full divide-y divide-slate-100">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-4 text-center">
+                            <input type="checkbox" checked={selectedStaffIds.size === filteredSummaries.length && filteredSummaries.length > 0} onChange={toggleSelectAll} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
+                          </th>
+                          <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">氏名</th>
+                          <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">時給</th>
+                          <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">PIN</th>
+                          <th className="px-6 py-4 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                            {format(currentDate, 'M月')}の状況
+                          </th>
+                          <th className="px-6 py-4 text-center text-xs font-black text-slate-600 uppercase tracking-wider">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-slate-100">
+                        {filteredSummaries.length === 0 ? (
+                          <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500 font-bold">表示するデータがありません</td></tr>
+                        ) : (
+                          filteredSummaries.map(({ staff, totalHours, totalWage }) => (
+                            <tr key={staff.id} className={`hover:bg-slate-50 transition ${staff.is_archived ? 'bg-slate-50 opacity-70' : ''}`}>
+                              <td className="px-4 py-4 text-center">
+                                <input type="checkbox" checked={selectedStaffIds.has(staff.id)} onChange={() => toggleSelect(staff.id)} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <Link href={`/attendance/${staff.id}?month=${currentMonthStr}`} className="flex items-center group">
+                                  <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold mr-3 transition ${staff.is_archived ? 'bg-slate-200 text-slate-500' : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200'}`}>
+                                    {staff.is_archived ? <Archive size={18} /> : staff.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <div className={`font-black transition text-lg ${staff.is_archived ? 'text-slate-500' : 'text-slate-950 group-hover:text-blue-600'}`}>{staff.name}</div>
+                                    {staff.is_archived && <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold">アーカイブ済</span>}
+                                  </div>
+                                </Link>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-slate-950 font-bold">¥{(staff.hourly_wage || 0).toLocaleString()}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-center text-slate-500 font-mono font-bold text-sm bg-slate-50 rounded-md py-1 mx-2 inline-block">{staff.pin || '----'}</td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-bold text-slate-950">{totalHours.toFixed(1)}h / <span className="text-slate-950">¥{totalWage.toLocaleString()}</span></div>
+                                <div className="text-xs mt-1">
+                                  {totalHours > 80 ? <span className="text-red-500 flex items-center font-bold"><AlertCircle size={12} className="mr-1" /> 週20時間超過</span> : <span className="text-green-500 flex items-center font-bold">✔ 正常</span>}
                                 </div>
-                                <div>
-                                  <div className={`font-black transition text-lg ${staff.is_archived ? 'text-slate-500' : 'text-slate-950 group-hover:text-blue-600'}`}>{staff.name}</div>
-                                  {staff.is_archived && <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold">アーカイブ済</span>}
-                                </div>
-                              </Link>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-slate-950 font-bold">¥{(staff.hourly_wage || 0).toLocaleString()}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-slate-500 font-mono font-bold text-sm bg-slate-50 rounded-md py-1 mx-2 inline-block">{staff.pin || '----'}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-bold text-slate-950">{totalHours.toFixed(1)}h / <span className="text-slate-950">¥{totalWage.toLocaleString()}</span></div>
-                              <div className="text-xs mt-1">
-                                {totalHours > 80 ? <span className="text-red-500 flex items-center font-bold"><AlertCircle size={12} className="mr-1" /> 週20時間超過</span> : <span className="text-green-500 flex items-center font-bold">✔ 正常</span>}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <div className="flex justify-center items-center space-x-2">
-                                <button onClick={() => handleEditStaff(staff)} className="text-slate-400 hover:text-blue-600 p-2 rounded-lg hover:bg-blue-50 transition" title="編集">
-                                  <Edit size={18} />
-                                </button>
-                                <button
-                                  onClick={() => handleArchiveStaff(staff)}
-                                  className={`p-2 rounded-lg transition ${staff.is_archived ? 'text-green-600 bg-green-50 hover:bg-green-100' : 'text-slate-400 hover:text-orange-600 hover:bg-orange-50'}`}
-                                  title={staff.is_archived ? "アーカイブ解除" : "アーカイブ"}
-                                >
-                                  <Archive size={18} />
-                                </button>
-                                {!staff.is_archived && (
-                                  <button
-                                    onClick={() => handleDeleteStaff(staff)}
-                                    className="text-slate-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition"
-                                    title="削除"
-                                  >
-                                    <Trash2 size={18} />
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-center">
+                                <div className="flex justify-center items-center space-x-2">
+                                  <button onClick={() => handleEditStaff(staff)} className="text-slate-400 hover:text-blue-600 p-2 rounded-lg hover:bg-blue-50 transition" title="編集">
+                                    <Edit size={18} />
                                   </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                                  <button
+                                    onClick={() => handleArchiveStaff(staff)}
+                                    className={`p-2 rounded-lg transition ${staff.is_archived ? 'text-green-600 bg-green-50 hover:bg-green-100' : 'text-slate-400 hover:text-orange-600 hover:bg-orange-50'}`}
+                                    title={staff.is_archived ? "アーカイブ解除" : "アーカイブ"}
+                                  >
+                                    <Archive size={18} />
+                                  </button>
+                                  {!staff.is_archived && (
+                                    <button
+                                      onClick={() => handleDeleteStaff(staff)}
+                                      className="text-slate-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition"
+                                      title="削除"
+                                    >
+                                      <Trash2 size={18} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 

@@ -147,7 +147,7 @@ export default function AdminDashboard() {
                         colorClass="text-orange-600"
                         title="人件費管理"
                         description="勤怠管理・給与計算ダッシュボード。"
-                        isProtected={true}
+                        isProtected={false} // Open (Partial lock inside)
                     />
 
                     {/* 5. Production Analytics */}
