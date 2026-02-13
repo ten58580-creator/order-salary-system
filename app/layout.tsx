@@ -16,7 +16,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Order Salary System",
   description: "Order and salary management system",
-  icons: { icon: '/favicon.ico?v=final' },
+  icons: {
+    icon: [
+      { url: '/icon.png?v=20260213', type: 'image/png' },
+    ],
+  },
 };
 
 export default function RootLayout({
