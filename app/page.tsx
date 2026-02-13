@@ -66,10 +66,10 @@ function DashboardContent() {
 
   useEffect(() => {
     const fetchRange = async () => {
-      const { data } = await supabase.from('timecards').select('date').order('date', { ascending: true }).limit(1).single();
+      const { data } = await supabase.from('timecard_logs').select('timestamp').order('timestamp', { ascending: true }).limit(1).single();
       let start = new Date();
-      if (data && data.date) {
-        start = new Date(data.date);
+      if (data && data.timestamp) {
+        start = new Date(data.timestamp);
       } else {
         start = addMonths(new Date(), -12);
       }
@@ -188,12 +188,12 @@ function DashboardContent() {
     if (count && count > 0) {
       setConfirmModal({
         isOpen: true,
-        title: '削除できません',
-        message: `${staff.name} には勤怠履歴が存在するため、物理削除できません。\n代わりに「アーカイブ」することで一覧から非表示にできます。\nアーカイブしますか？`,
-        confirmText: 'アーカイブする',
+        title: '従業員の完全削除（注意）',
+        message: `${staff.name} には ${count} 件の勤怠履歴が存在します。\n\n削除すると、これまでのタイムカード履歴も全て削除され、復元できません。\n本当に削除しますか？\n（履歴を残したい場合は「アーカイブ」を選択してください）`,
+        confirmText: '全て削除する',
         isDanger: true,
         onConfirm: async () => {
-          const { error } = await supabase.from('staff').update({ is_archived: true }).eq('id', staff.id);
+          const { error } = await supabase.from('staff').delete().eq('id', staff.id);
           if (error) alert('エラー: ' + error.message);
           else fetchData();
         }
@@ -202,7 +202,7 @@ function DashboardContent() {
       setConfirmModal({
         isOpen: true,
         title: '従業員の完全削除',
-        message: `本当に ${staff.name} を削除してよろしいですか？\n\nこの操作は取り消せません。\n勤怠履歴がないため、完全にデータベースから抹消されます。`,
+        message: `本当に ${staff.name} を削除してよろしいですか？\n\nこの操作は取り消せません。`,
         confirmText: '削除する',
         isDanger: true,
         onConfirm: async () => {
