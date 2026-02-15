@@ -77,16 +77,18 @@ function PayslipPageContent() {
                 return pinA - pinB;
             });
 
-            // 2. Fetch Timecard Logs for ALL staff in range
-            // We fetch all logs for the month and filter in memory to match each staff
-            const { data: logs, error: logsError } = await supabase
-                .from('timecard_logs')
-                .select('*')
-                .gte('timestamp', startStr)
-                .lte('timestamp', endStr)
-                .order('timestamp', { ascending: true });
+            // 2. Fetch Timecard Logs for ALL staff in range via API (Bypass RLS)
+            const logsResponse = await fetch(`/api/admin/attendance-logs?start=${encodeURIComponent(startStr)}&end=${encodeURIComponent(endStr)}`, {
+                cache: 'no-store',
+                next: { revalidate: 0 },
+                headers: {
+                    'Pragma': 'no-cache',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate'
+                }
+            });
 
-            if (logsError) throw logsError;
+            const logsResult = await logsResponse.json();
+            const logs = logsResult.data || [];
 
             // 3. Calculate for each staff
             const calculated: PayslipData[] = sortedStaff.map(staff => {
