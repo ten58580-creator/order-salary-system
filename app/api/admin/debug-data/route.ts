@@ -20,7 +20,6 @@ export async function GET(request: Request) {
     // 1. Check Key FIRST (Bypass Auth & RLS)
     if (key === 'admin123') {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-        // Use provided service key param OR env var OR fallback to anon (which might fail but tries)
         const supabaseServiceKey = serviceKeyInput || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
         supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -47,7 +46,6 @@ export async function GET(request: Request) {
                                 cookieStore.set(name, value, options)
                             )
                         } catch {
-                            // Ignored
                         }
                     },
                 },
@@ -62,7 +60,7 @@ export async function GET(request: Request) {
     }
 
     const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endStr = format(new Date(year, month, 0), 'yyyy-MM-dd'); // Correct last day of month
+    const endStr = format(new Date(year, month, 0), 'yyyy-MM-dd');
 
     const results: any = {
         action,
@@ -72,10 +70,7 @@ export async function GET(request: Request) {
         mode: key === 'admin123' ? 'admin_bypass' : 'authenticated_user',
         env_check: {
             service_role_key_exists: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-            service_key_input_provided: !!serviceKeyInput,
-            // First 5 chars to verify it's different from anon
-            service_key_prefix: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 5) + '...' : 'N/A',
-            input_key_prefix: serviceKeyInput ? serviceKeyInput.substring(0, 5) + '...' : 'N/A'
+            service_key_input_provided: !!serviceKeyInput
         }
     };
 
@@ -119,9 +114,6 @@ export async function GET(request: Request) {
             };
 
             if (fix || searchParams.get('migrate') === 'true') {
-                // Trigger Migration if requested
-                // Allow migration if old total > 0, even if filtered is 0 (maybe wrong date range?) 
-                // But sticking to requested logic:
                 if ((oldFiltered || 0) > 0 && (newCount || 0) === 0) {
                     results.migration_status = 'Starting Migration...';
                     const mResults = await migrateData(supabase, startStr, endStr);
@@ -132,7 +124,6 @@ export async function GET(request: Request) {
             }
 
         } else if (action === 'scan') {
-            // Scan all known tables
             const tables = ['timecards', 'timecard_logs', 'staff', 'companies', 'orders', 'production_records', 'products'];
             const tableCounts: any = {};
 
@@ -140,7 +131,6 @@ export async function GET(request: Request) {
                 const { count, error } = await supabase.from(t).select('*', { count: 'exact', head: true });
                 tableCounts[t] = error ? error.message : count;
             }
-
             results.table_scan = tableCounts;
 
         } else if (action === 'migrate') {
@@ -148,9 +138,12 @@ export async function GET(request: Request) {
             results.migration_result = mResults;
 
         } else if (action === 'seed') {
-            // Seed Logic
             const seedResult = await seedData(supabase, userId, year, month);
             results.seed_result = seedResult;
+
+        } else if (action === 'fix_data') {
+            // Fix missing company_id
+            results.fix_result = await fixData(supabase);
         }
 
         return NextResponse.json(results);
@@ -158,6 +151,49 @@ export async function GET(request: Request) {
     } catch (e: any) {
         return NextResponse.json({ error: e.message, stack: e.stack }, { status: 500 });
     }
+}
+
+async function fixData(supabase: any) {
+    // 1. Get all staff with company_id
+    const { data: staffList } = await supabase.from('staff').select('id, company_id');
+    const staffMap = new Map();
+    staffList?.forEach((s: any) => staffMap.set(s.id, s.company_id));
+
+    // 2. Scan logs with null company_id
+    const { data: logs, error: fetchError } = await supabase
+        .from('timecard_logs')
+        .select('id, staff_id')
+        .is('company_id', null)
+        .limit(2000);
+
+    if (fetchError) throw fetchError;
+
+    let updatedCount = 0;
+    const errors: any[] = [];
+
+    if (logs && logs.length > 0) {
+        for (const log of logs) {
+            const compId = staffMap.get(log.staff_id);
+            if (compId) {
+                const { error: updateError } = await supabase
+                    .from('timecard_logs')
+                    .update({ company_id: compId })
+                    .eq('id', log.id);
+
+                if (updateError) errors.push({ id: log.id, msg: updateError.message });
+                else updatedCount++;
+            } else {
+                errors.push({ id: log.id, msg: 'Staff not found or no company_id' });
+            }
+        }
+    }
+
+    return {
+        found_null_company_id: logs?.length || 0,
+        updated_count: updatedCount,
+        errors_count: errors.length,
+        sample_errors: errors.slice(0, 5)
+    };
 }
 
 async function migrateData(supabase: any, startStr: string, endStr: string) {
@@ -170,16 +206,21 @@ async function migrateData(supabase: any, startStr: string, endStr: string) {
     if (oldError) throw oldError;
     if (!oldData || oldData.length === 0) return { status: 'No data to migrate', count: 0 };
 
+    // Prefetch staff company map
+    const { data: staffList } = await supabase.from('staff').select('id, company_id');
+    const staffMap = new Map();
+    staffList?.forEach((s: any) => staffMap.set(s.id, s.company_id));
+
     const logsToInsert: any[] = [];
     const errors: any[] = [];
 
     for (const card of oldData) {
         if (!card.clock_in || !card.clock_out) continue;
 
+        const companyId = staffMap.get(card.staff_id);
+
         try {
             const date = card.date;
-            // Parse Times
-            // Assuming HH:mm
             const parseTime = (timeStr: string) => {
                 if (timeStr.length === 5) return parse(`${date} ${timeStr}`, 'yyyy-MM-dd HH:mm', new Date());
                 return new Date(timeStr.includes('T') ? timeStr : `${date}T${timeStr}`);
@@ -195,12 +236,12 @@ async function migrateData(supabase: any, startStr: string, endStr: string) {
 
             logsToInsert.push({
                 staff_id: card.staff_id,
+                company_id: companyId,
                 event_type: 'clock_in',
                 timestamp: inTime.toISOString()
             });
 
             if (card.break_minutes && card.break_minutes > 0) {
-                // Break Logic
                 let breakStart = parse(`${date} 12:00`, 'yyyy-MM-dd HH:mm', new Date());
                 if (breakStart < inTime || breakStart > outTime) {
                     const mid = (inTime.getTime() + outTime.getTime()) / 2;
@@ -210,11 +251,13 @@ async function migrateData(supabase: any, startStr: string, endStr: string) {
 
                 logsToInsert.push({
                     staff_id: card.staff_id,
+                    company_id: companyId,
                     event_type: 'break_start',
                     timestamp: breakStart.toISOString()
                 });
                 logsToInsert.push({
                     staff_id: card.staff_id,
+                    company_id: companyId,
                     event_type: 'break_end',
                     timestamp: breakEnd.toISOString()
                 });
@@ -222,6 +265,7 @@ async function migrateData(supabase: any, startStr: string, endStr: string) {
 
             logsToInsert.push({
                 staff_id: card.staff_id,
+                company_id: companyId,
                 event_type: 'clock_out',
                 timestamp: outTime.toISOString()
             });
@@ -231,7 +275,6 @@ async function migrateData(supabase: any, startStr: string, endStr: string) {
         }
     }
 
-    // Batch insert loop
     if (logsToInsert.length > 0) {
         const batchSize = 100;
         for (let i = 0; i < logsToInsert.length; i += batchSize) {
@@ -250,19 +293,17 @@ async function migrateData(supabase: any, startStr: string, endStr: string) {
 }
 
 async function seedData(supabase: any, _userId: string, year: number, month: number) {
-    // 1. Get first staff
-    const { data: staff } = await supabase.from('staff').select('id').limit(1).single();
+    const { data: staff } = await supabase.from('staff').select('id, company_id').limit(1).single();
     if (!staff) return { status: 'No staff found' };
 
-    // 2. Generate logs for days 5-6
     const logs = [];
     for (let d = 5; d <= 6; d++) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         logs.push(
-            { staff_id: staff.id, event_type: 'clock_in', timestamp: `${dateStr}T09:00:00` },
-            { staff_id: staff.id, event_type: 'break_start', timestamp: `${dateStr}T12:00:00` },
-            { staff_id: staff.id, event_type: 'break_end', timestamp: `${dateStr}T13:00:00` },
-            { staff_id: staff.id, event_type: 'clock_out', timestamp: `${dateStr}T18:00:00` }
+            { staff_id: staff.id, company_id: staff.company_id, event_type: 'clock_in', timestamp: `${dateStr}T09:00:00` },
+            { staff_id: staff.id, company_id: staff.company_id, event_type: 'break_start', timestamp: `${dateStr}T12:00:00` },
+            { staff_id: staff.id, company_id: staff.company_id, event_type: 'break_end', timestamp: `${dateStr}T13:00:00` },
+            { staff_id: staff.id, company_id: staff.company_id, event_type: 'clock_out', timestamp: `${dateStr}T18:00:00` }
         );
     }
 
