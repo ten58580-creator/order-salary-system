@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     const month = parseInt(searchParams.get('month') || '1');
     const fix = searchParams.get('fix') === 'true'; // Force fix/migrate
     const key = searchParams.get('key'); // Bypass Key
+    const serviceKeyInput = searchParams.get('service_key'); // Direct Input for Service Key
 
     let supabase;
     let userId = 'system_bypass';
@@ -19,8 +20,8 @@ export async function GET(request: Request) {
     // 1. Check Key FIRST (Bypass Auth & RLS)
     if (key === 'admin123') {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-        // Try Service Role Key for RLS Bypass, fallback to Anon Key (might fail RLS but allow connection)
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        // Use provided service key param OR env var OR fallback to anon (which might fail but tries)
+        const supabaseServiceKey = serviceKeyInput || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
         supabase = createClient(supabaseUrl, supabaseServiceKey, {
             auth: {
@@ -71,9 +72,10 @@ export async function GET(request: Request) {
         mode: key === 'admin123' ? 'admin_bypass' : 'authenticated_user',
         env_check: {
             service_role_key_exists: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+            service_key_input_provided: !!serviceKeyInput,
             // First 5 chars to verify it's different from anon
             service_key_prefix: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 5) + '...' : 'N/A',
-            anon_key_prefix: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.substring(0, 5) + '...' : 'N/A'
+            input_key_prefix: serviceKeyInput ? serviceKeyInput.substring(0, 5) + '...' : 'N/A'
         }
     };
 
