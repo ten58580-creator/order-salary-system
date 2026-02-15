@@ -140,32 +140,35 @@ function AnalyticsContent() {
                 setItems(fetchedItems);
             }
 
-            // 2. Fetch Attendance Logs instead of 'timecards'
+            // 2. Fetch Attendance Logs via API (Bypass RLS)
             const startStr = date + 'T00:00:00';
             const endStr = date + 'T23:59:59';
 
-            const { data: logsData, error: logsError } = await supabase
-                .from('timecard_logs')
-                .select('*')
-                .gte('timestamp', startStr)
-                .lte('timestamp', endStr)
-                .order('timestamp', { ascending: true });
+            const logsResponse = await fetch(`/api/admin/attendance-logs?start=${encodeURIComponent(startStr)}&end=${encodeURIComponent(endStr)}`, {
+                cache: 'no-store',
+                headers: {
+                    'Pragma': 'no-cache'
+                }
+            });
+
+            const logsResult = await logsResponse.json();
+            const logsData = logsResult.data || [];
 
             if (logsData) {
                 // Determine Factory Open/Close
-                const clockIns = logsData.filter(l => l.event_type === 'clock_in');
-                const clockOuts = logsData.filter(l => l.event_type === 'clock_out');
+                const clockIns = logsData.filter((l: any) => l.event_type === 'clock_in');
+                const clockOuts = logsData.filter((l: any) => l.event_type === 'clock_out');
 
                 let minIn: string | null = null;
                 let maxOut: string | null = null;
 
                 if (clockIns.length > 0) {
-                    const sortedIns = clockIns.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                    const sortedIns = clockIns.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
                     minIn = format(new Date(sortedIns[0].timestamp), 'HH:mm');
                 }
 
                 if (clockOuts.length > 0) {
-                    const sortedOuts = clockOuts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                    const sortedOuts = clockOuts.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
                     maxOut = format(new Date(sortedOuts[0].timestamp), 'HH:mm');
                 }
 
