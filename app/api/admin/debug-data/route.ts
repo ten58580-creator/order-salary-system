@@ -28,7 +28,6 @@ export async function GET(request: Request) {
                 persistSession: false
             }
         });
-        console.log('Admin Bypass: Using Service Client');
     } else {
         // 2. Normal Auth (Session based)
         const cookieStore = await cookies();
@@ -62,30 +61,36 @@ export async function GET(request: Request) {
     }
 
     const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endStr = format(new Date(year, month, 0), 'yyyy-MM-dd');
+    const endStr = format(new Date(year, month, 0), 'yyyy-MM-dd'); // Correct last day of month
 
     const results: any = {
         action,
         target: { year, month },
         timestamp: new Date().toISOString(),
         user: userId,
-        mode: key === 'admin123' ? 'admin_bypass' : 'authenticated_user'
+        mode: key === 'admin123' ? 'admin_bypass' : 'authenticated_user',
+        env_check: {
+            service_role_key_exists: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+            // First 5 chars to verify it's different from anon
+            service_key_prefix: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 5) + '...' : 'N/A',
+            anon_key_prefix: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.substring(0, 5) + '...' : 'N/A'
+        }
     };
 
     try {
         if (action === 'check') {
-            // Check Old Table
-            const { count: oldCount, data: sampleOld } = await supabase
+            // Check Old Table (Filtered)
+            const { count: oldFiltered, data: sampleOld } = await supabase
                 .from('timecards')
                 .select('*', { count: 'exact' })
                 .gte('date', startStr)
                 .lte('date', endStr)
                 .limit(1);
 
-            results.old_table = {
-                count: oldCount,
-                sample: sampleOld?.[0] || null
-            };
+            // Check Old Table (Total)
+            const { count: oldTotal } = await supabase
+                .from('timecards')
+                .select('*', { count: 'exact', head: true });
 
             // Check New Table
             const { count: newCount, data: sampleNew } = await supabase
@@ -95,21 +100,46 @@ export async function GET(request: Request) {
                 .lte('timestamp', `${endStr}T23:59:59`)
                 .limit(1);
 
-            results.new_table = {
-                count: newCount,
-                sample: sampleNew?.[0] || null
+            // Check New Table (Total)
+            const { count: newTotal } = await supabase
+                .from('timecard_logs')
+                .select('*', { count: 'exact', head: true });
+
+            results.counts = {
+                old_filtered: oldFiltered,
+                old_total: oldTotal,
+                new_filtered: newCount,
+                new_total: newTotal
+            };
+            results.samples = {
+                old: sampleOld?.[0] || null,
+                new: sampleNew?.[0] || null
             };
 
             if (fix || searchParams.get('migrate') === 'true') {
                 // Trigger Migration if requested
-                if ((oldCount || 0) > 0 && (newCount || 0) === 0) {
+                // Allow migration if old total > 0, even if filtered is 0 (maybe wrong date range?) 
+                // But sticking to requested logic:
+                if ((oldFiltered || 0) > 0 && (newCount || 0) === 0) {
                     results.migration_status = 'Starting Migration...';
                     const mResults = await migrateData(supabase, startStr, endStr);
                     results.migration_result = mResults;
                 } else {
-                    results.migration_status = 'Skipped: Conditions not met (Old > 0 AND New == 0) or migrate param not identical.';
+                    results.migration_status = 'Skipped: Conditions not met (Old Filtered > 0 AND New Filtered == 0).';
                 }
             }
+
+        } else if (action === 'scan') {
+            // Scan all known tables
+            const tables = ['timecards', 'timecard_logs', 'staff', 'companies', 'orders', 'production_records', 'products'];
+            const tableCounts: any = {};
+
+            for (const t of tables) {
+                const { count, error } = await supabase.from(t).select('*', { count: 'exact', head: true });
+                tableCounts[t] = error ? error.message : count;
+            }
+
+            results.table_scan = tableCounts;
 
         } else if (action === 'migrate') {
             const mResults = await migrateData(supabase, startStr, endStr);
@@ -218,8 +248,7 @@ async function migrateData(supabase: any, startStr: string, endStr: string) {
 }
 
 async function seedData(supabase: any, _userId: string, year: number, month: number) {
-    // 1. Get first staff (Try both tables to be safe with RLS)
-    // If Admin Bypass, we can read any staff.
+    // 1. Get first staff
     const { data: staff } = await supabase.from('staff').select('id').limit(1).single();
     if (!staff) return { status: 'No staff found' };
 
