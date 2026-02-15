@@ -1,4 +1,5 @@
 
+import { createClient } from '@supabase/supabase-js';
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
@@ -12,35 +13,47 @@ export async function GET(request: Request) {
     const fix = searchParams.get('fix') === 'true'; // Force fix/migrate
     const key = searchParams.get('key'); // Bypass Key
 
-    const cookieStore = await cookies();
-
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                getAll() {
-                    return cookieStore.getAll()
-                },
-                setAll(cookiesToSet) {
-                    try {
-                        cookiesToSet.forEach(({ name, value, options }) =>
-                            cookieStore.set(name, value, options)
-                        )
-                    } catch {
-                        // The `setAll` method was called from a Server Component.
-                        // This can be ignored if you have middleware refreshing
-                        // user sessions.
-                    }
-                },
-            },
-        }
-    )
-
+    let supabase;
     let userId = 'system_bypass';
 
-    if (key !== 'admin123') {
-        // Normal Auth Check
+    // 1. Check Key FIRST (Bypass Auth & RLS)
+    if (key === 'admin123') {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        // Try Service Role Key for RLS Bypass, fallback to Anon Key (might fail RLS but allow connection)
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+        supabase = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        });
+        console.log('Admin Bypass: Using Service Client');
+    } else {
+        // 2. Normal Auth (Session based)
+        const cookieStore = await cookies();
+
+        supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    getAll() {
+                        return cookieStore.getAll()
+                    },
+                    setAll(cookiesToSet) {
+                        try {
+                            cookiesToSet.forEach(({ name, value, options }) =>
+                                cookieStore.set(name, value, options)
+                            )
+                        } catch {
+                            // Ignored
+                        }
+                    },
+                },
+            }
+        )
+
         const { data: { user }, error: authError } = await supabase.auth.getUser()
         if (authError || !user) {
             return NextResponse.json({ error: 'Unauthorized', details: authError }, { status: 401 });
@@ -49,13 +62,14 @@ export async function GET(request: Request) {
     }
 
     const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endStr = format(new Date(year, month, 0), 'yyyy-MM-dd'); // Correct last day of month
+    const endStr = format(new Date(year, month, 0), 'yyyy-MM-dd');
 
     const results: any = {
         action,
         target: { year, month },
         timestamp: new Date().toISOString(),
-        user: userId // Use resolved userId
+        user: userId,
+        mode: key === 'admin123' ? 'admin_bypass' : 'authenticated_user'
     };
 
     try {
@@ -204,13 +218,14 @@ async function migrateData(supabase: any, startStr: string, endStr: string) {
 }
 
 async function seedData(supabase: any, _userId: string, year: number, month: number) {
-    // 1. Get first staff
+    // 1. Get first staff (Try both tables to be safe with RLS)
+    // If Admin Bypass, we can read any staff.
     const { data: staff } = await supabase.from('staff').select('id').limit(1).single();
     if (!staff) return { status: 'No staff found' };
 
-    // 2. Generate logs for days 5-10
+    // 2. Generate logs for days 5-6
     const logs = [];
-    for (let d = 5; d <= 10; d++) {
+    for (let d = 5; d <= 6; d++) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         logs.push(
             { staff_id: staff.id, event_type: 'clock_in', timestamp: `${dateStr}T09:00:00` },
