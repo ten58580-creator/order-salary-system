@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { supabase } from '@/utils/supabaseClient';
 import { useRouter } from 'next/navigation';
+import { ClipboardList } from 'lucide-react';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -57,7 +58,15 @@ export default function LoginPage() {
             <div className="max-w-md w-full space-y-8 p-8 bg-white shadow rounded-xl">
                 <div className="text-center">
                     <h2 className="text-3xl font-extrabold text-gray-900">ログイン</h2>
-                    <p className="mt-2 text-sm text-gray-600">Order Salary System</p>
+                    {/* Start of the requested change */}
+                    <div className="bg-white p-4 rounded-full shadow-lg mb-6 group-hover:scale-110 transition-transform duration-300">
+                        <ClipboardList size={48} className="text-blue-600" />
+                    </div>
+                    <h1 className="text-3xl font-black text-slate-800 tracking-tight">
+                        Checkle
+                    </h1>
+                    <p className="text-slate-500 font-bold mt-2">勤怠・給与管理システム</p>
+                    {/* End of the requested change */}
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleLogin}>
                     <div className="rounded-md shadow-sm -space-y-px">
