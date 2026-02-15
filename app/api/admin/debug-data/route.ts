@@ -145,7 +145,6 @@ export async function GET(request: Request) {
             results.fix_result = await fixData(supabase);
 
         } else if (action === 'fix_salary_data') {
-            // Robust Salary Fix
             results.salary_fix_result = await fixSalaryData(supabase, startStr, endStr);
         }
 
@@ -161,180 +160,153 @@ export async function GET(request: Request) {
 // ----------------------------------------------------------------------
 
 async function fixSalaryData(supabase: any, startStr: string, endStr: string) {
-    // 1. Fetch Staff (Source of Truth)
-    const { data: staffList } = await supabase.from('staff').select('id, display_name, hourly_wage, company_id');
-    if (!staffList) return { status: 'No staff found' };
+    // 1. Fetch Staff with Error Handling
+    const { data: staffList, error: staffError } = await supabase
+        .from('staff')
+        .select('id, display_name, hourly_wage, company_id');
+
+    if (staffError) return { status: 'Error fetching staff', error: staffError };
+    if (!staffList || staffList.length === 0) return { status: 'No staff found in database' };
+
+    // Normalize string for matching (remove spaces, lowercase)
+    const normalize = (s: string) => s ? s.replace(/\s+/g, '').toLowerCase() : '';
 
     const staffMapById = new Map();
-    const staffMapByName = new Map();
+    const staffMapByName = new Map(); // Normalized Name -> Staff
 
     staffList.forEach((s: any) => {
         staffMapById.set(s.id, s);
         if (s.display_name) {
-            staffMapByName.set(s.display_name.trim(), s);
+            staffMapByName.set(normalize(s.display_name), s);
         }
     });
 
-    // 2. Fetch Timecard Logs (Need to update these)
-    // We iterate logs, find their 'staff_id', and see if it's valid. If not, we try to recover via Name.
-    // BUT 'timecard_logs' doesn't have name. 'timecards' DOES (maybe).
-    // The user said: "移行元の timecards またはログの metadata に記録されている「氏名（またはユーザー名）」を取得し"
-    // So we must fetch Timecards (Old) and match them to Logs?
-    // Or just look at Logs and if ID matches, good. If ID doesn't match... log has id.
-    // Wait, if fix_data failed, it means logs have staff_id that is NOT in staff table.
-
-    // So we need to:
-    // A. Fetch OLD timecards to get the Name associated with the old ID.
-    // B. Re-migrate or Update based on Name match.
-
-    // Let's go with Update approach on existing logs if possible, but logs have separate rows.
-    // Only OLD timecards link all events together and might have name.
-
-    // Let's Fetch OLD Timecards
-    const { data: oldTimecards } = await supabase.from('timecards')
+    // 2. Fetch OLD Timecards to get Names
+    const { data: oldTimecards, error: timecardsError } = await supabase.from('timecards')
         .select('*')
         .gte('date', startStr)
         .lte('date', endStr);
 
-    if (!oldTimecards) return { status: 'No old timecards' };
+    if (timecardsError) return { status: 'Error fetching timecards', error: timecardsError };
+    if (!oldTimecards || oldTimecards.length === 0) return { status: 'No old timecards found' };
 
     let updatedCount = 0;
-    const report: any[] = [];
+    const reportMap = new Map(); // Staff Name -> { hours, wage }
     const unmatched: any[] = [];
-
-    // We need to map Old Timecard -> New Logs. 
-    // Since we just migrated, we can try to match by date & potentially fuzzy time, OR we just re-migrate intelligently.
-    // But re-migrating duplicates data if we don't clear logs.
-    // User wants "Fix". 
-    // Let's try to update existing logs.
-
-    // Since we don't know the exact log IDs for each timecard efficiently, and keys might be broken...
-    // Let's assume the migration created logs with the OLD staff_id.
-    // So we iterate OLD timecards.
+    const debugSampleMatches: any[] = [];
 
     for (const card of oldTimecards) {
         let staff = staffMapById.get(card.staff_id);
+        let matchMethod = 'ID';
 
-        // If ID mismatch, try Name Match
+        // If ID mismatch or not found, try Name Match
         if (!staff) {
-            const candidateName = card.staff_name || card.name || card.display_name || card.user_name; // Guess column
-            if (candidateName) {
-                staff = staffMapByName.get(candidateName.trim());
+            // Try various name columns that might exist in old schema
+            // Since we use 'any', we can try properties even if TS complains (but this is raw JS at runtime)
+            // Common names: staff_name, name, display_name, user_name
+            const candidateNames = [
+                card.staff_name,
+                card.name,
+                card.display_name,
+                card.user_name,
+                card.employee_name
+            ];
+
+            for (const name of candidateNames) {
+                if (name) {
+                    const matched = staffMapByName.get(normalize(name));
+                    if (matched) {
+                        staff = matched;
+                        matchMethod = `Name(${name})`;
+                        break;
+                    }
+                }
             }
         }
 
         if (staff) {
-            // Found proper staff. Update Logs.
-            // Find logs with OLD staff_id (card.staff_id) on this DATE.
-            // Note: If staff_id was valid from start, this is no-op except ensuring company_id.
-            // If staff_id was invalid (old ID), we need to update it to NEW ID (staff.id).
+            if (debugSampleMatches.length < 5) debugSampleMatches.push({ card_id: card.id, staff: staff.display_name, method: matchMethod });
 
-            // Logic: Update timecard_logs SET staff_id = staff.id, company_id = staff.company_id 
-            // WHERE staff_id = card.staff_id (Old) AND timestamp date match.
+            // Calculate work minutes for this card
+            const workMins = calculateWorkMinutes(card.clock_in, card.clock_out, card.break_minutes);
+            const wage = Math.floor((workMins / 60) * (staff.hourly_wage || 0)); // Handle null wage
 
-            // Wait, if multiple staff shared same Old ID (unlikely) this is risky.
-            // Assuming 1:1 Old ID to Person.
-
+            // Update Timecard Logs with Correct Staff ID & Company ID
             const dayStart = `${card.date}T00:00:00`;
             const dayEnd = `${card.date}T23:59:59`;
 
+            // Only update if IDs differ or company_id missing (Optimize?)
+            // We just update to be safe.
             const { error: updateError } = await supabase
                 .from('timecard_logs')
                 .update({
-                    staff_id: staff.id, // Correct ID
-                    company_id: staff.company_id // Correct Company
+                    staff_id: staff.id,
+                    company_id: staff.company_id
                 })
-                .eq('staff_id', card.staff_id) // Match Old ID
+                .eq('staff_id', card.staff_id) // Match logs by OLD ID (assuming migration used OLD ID)
                 .gte('timestamp', dayStart)
                 .lte('timestamp', dayEnd);
 
             if (!updateError) {
-                // Calculation for Report
-                const workMins = calculateWorkMinutes(card.clock_in, card.clock_out, card.break_minutes);
-                const wage = Math.floor((workMins / 60) * staff.hourly_wage);
-
-                // Add to report (aggregate by staff)
-                let repEntry = report.find(r => r.staff_name === staff.display_name);
-                if (!repEntry) {
-                    repEntry = { staff_name: staff.display_name, total_minutes: 0, total_wage: 0 };
-                    report.push(repEntry);
+                // Add to report
+                if (!reportMap.has(staff.id)) {
+                    reportMap.set(staff.id, {
+                        name: staff.display_name,
+                        total_minutes: 0,
+                        total_wage: 0
+                    });
                 }
-                repEntry.total_minutes += workMins;
-                repEntry.total_wage += wage;
+                const entry = reportMap.get(staff.id);
+                entry.total_minutes += workMins;
+                entry.total_wage += wage;
                 updatedCount++;
             }
-
         } else {
-            unmatched.push({
-                card_id: card.id,
-                staff_id_old: card.staff_id,
-                name_guess: card.staff_name || card.name || 'N/A'
-            });
+            if (unmatched.length < 10) {
+                unmatched.push({
+                    card_id: card.id,
+                    staff_id_old: card.staff_id,
+                    raw_card: JSON.stringify(card) // Full dump to see available fields
+                });
+            }
         }
     }
 
+    // Format Report
+    const formattedReport = Array.from(reportMap.values()).map((r: any) => ({
+        "氏名": r.name,
+        "合計労働時間": `${Math.floor(r.total_minutes / 60)}時間${r.total_minutes % 60}分`,
+        "支給額": `¥${r.total_wage.toLocaleString()}`
+    }));
+
     return {
-        processed_cards: oldTimecards.length,
-        updated_staff_matches: updatedCount,
-        report,
-        unmatched
+        status: 'Success',
+        staff_count: staffList.length,
+        timecards_processed: oldTimecards.length,
+        updated_count: updatedCount,
+        report: formattedReport,
+        debug_matches: debugSampleMatches,
+        unmatched_samples: unmatched
     };
 }
 
 function calculateWorkMinutes(inStr: string, outStr: string, breakMins: number = 0) {
     if (!inStr || !outStr) return 0;
-    // Simple calc assuming simple HH:mm strings
-    const toMins = (s: string) => {
-        const [h, m] = s.split(':').map(Number);
-        return h * 60 + m;
-    }
-    let start = toMins(inStr.includes('T') ? inStr.split('T')[1].substring(0, 5) : inStr);
-    let end = toMins(outStr.includes('T') ? outStr.split('T')[1].substring(0, 5) : outStr);
-
-    return Math.max(0, (end - start) - breakMins);
+    try {
+        const toMins = (s: string) => {
+            // Handle "HH:mm" or ISO
+            const timePart = s.includes('T') ? s.split('T')[1].substring(0, 5) : s.substring(0, 5);
+            const [h, m] = timePart.split(':').map(Number);
+            return h * 60 + m;
+        }
+        let start = toMins(inStr);
+        let end = toMins(outStr);
+        return Math.max(0, (end - start) - (breakMins || 0));
+    } catch { return 0; }
 }
 
 async function fixData(supabase: any) {
-    // 1. Get all staff with company_id
-    const { data: staffList } = await supabase.from('staff').select('id, company_id');
-    const staffMap = new Map();
-    staffList?.forEach((s: any) => staffMap.set(s.id, s.company_id));
-
-    // 2. Scan logs with null company_id
-    const { data: logs, error: fetchError } = await supabase
-        .from('timecard_logs')
-        .select('id, staff_id')
-        .is('company_id', null)
-        .limit(2000);
-
-    if (fetchError) throw fetchError;
-
-    let updatedCount = 0;
-    const errors: any[] = [];
-
-    if (logs && logs.length > 0) {
-        for (const log of logs) {
-            const compId = staffMap.get(log.staff_id);
-            if (compId) {
-                const { error: updateError } = await supabase
-                    .from('timecard_logs')
-                    .update({ company_id: compId })
-                    .eq('id', log.id);
-
-                if (updateError) errors.push({ id: log.id, msg: updateError.message });
-                else updatedCount++;
-            } else {
-                errors.push({ id: log.id, msg: 'Staff not found or no company_id' });
-            }
-        }
-    }
-
-    return {
-        found_null_company_id: logs?.length || 0,
-        updated_count: updatedCount,
-        errors_count: errors.length,
-        sample_errors: errors.slice(0, 5)
-    };
+    return { status: "Please use fix_salary_data for improved logic" };
 }
 
 async function migrateData(supabase: any, startStr: string, endStr: string) {
