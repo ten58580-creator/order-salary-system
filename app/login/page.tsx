@@ -66,6 +66,7 @@ export default function LoginPage() {
                         チェックル
                     </h1>
                     <p className="text-slate-500 font-bold mt-2">勤怠・給与管理システム</p>
+                    {/* System Name Updated to Checkle */}
                     {/* End of the requested change */}
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleLogin}>
