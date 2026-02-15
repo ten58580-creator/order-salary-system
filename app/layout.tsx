@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Checkle (チェックル)",
+  title: "チェックル",
   description: "クラウド型勤怠・給与管理システム",
 };
 
