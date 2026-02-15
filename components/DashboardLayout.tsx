@@ -11,7 +11,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="min-h-screen bg-gray-50 flex flex-col">
             <header className="bg-white shadow-sm">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                    <h1 className="text-xl font-bold text-gray-900">チェックル</h1>
+                    <div className="flex items-center gap-3">
+                        <img src="/icon.png" alt="Logo" className="h-8 w-8 object-contain" />
+                        <h1 className="text-2xl font-black text-slate-800 tracking-tighter">チェックル</h1>
+                    </div>
                     <AdminLockButton />
                 </div>
             </header >

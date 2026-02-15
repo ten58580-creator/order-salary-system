@@ -59,12 +59,10 @@ export default function LoginPage() {
                 <div className="text-center">
                     <h2 className="text-3xl font-extrabold text-gray-900">ログイン</h2>
                     {/* Start of the requested change */}
-                    <div className="bg-white p-4 rounded-full shadow-lg mb-6 group-hover:scale-110 transition-transform duration-300">
-                        <ClipboardList size={48} className="text-blue-600" />
+                    <div className="flex items-center justify-center gap-3 mb-2">
+                        <img src="/icon.png" alt="Logo" className="h-9 w-9 object-contain" />
+                        <h1 className="text-3xl font-black text-slate-800 tracking-tighter">チェックル</h1>
                     </div>
-                    <h1 className="text-3xl font-black text-slate-800 tracking-tight">
-                        チェックル
-                    </h1>
                     <p className="text-slate-500 font-bold mt-2">勤怠・給与管理システム</p>
                     {/* System Name Updated to Checkle */}
                     {/* End of the requested change */}
