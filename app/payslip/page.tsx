@@ -8,6 +8,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { startOfMonth, endOfMonth, format, parse, addMonths, subMonths } from 'date-fns';
 import { Printer, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { calculateNetWorkingMinutes, formatHoursFromMinutes } from '@/utils/laborCalculator';
 
 type Staff = Database['public']['Tables']['staff']['Row'];
 
@@ -48,13 +49,15 @@ function PayslipPageContent() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const startStr = format(startOfMonth(currentDate), 'yyyy-MM-dd');
-            const endStr = format(endOfMonth(currentDate), 'yyyy-MM-dd');
-
-            // 1. Fetch Staff (Admin excluded for payslips usually? User said remove from Ledger, likely same here. But keeping safe: Filter out admins)
-            const idsParam = searchParams.get('ids');
+            const startD = startOfMonth(currentDate);
+            const endD = endOfMonth(currentDate);
+            // Timecard Logs are stored in UTC or local depending on implementation, but usually timestamp column is timestamptz.
+            // We need to query range that covers the whole month in local time.
+            const startStr = format(startD, 'yyyy-MM-dd') + 'T00:00:00';
+            const endStr = format(endD, 'yyyy-MM-dd') + 'T23:59:59';
 
             // 1. Fetch Staff
+            const idsParam = searchParams.get('ids');
             let query = supabase.from('staff').select('*').neq('role', 'admin').order('id');
 
             if (idsParam) {
@@ -74,22 +77,82 @@ function PayslipPageContent() {
                 return pinA - pinB;
             });
 
-            // 2. Fetch Timecards
-            const { data: timecards, error: tcError } = await supabase
-                .from('timecards')
+            // 2. Fetch Timecard Logs for ALL staff in range
+            // We fetch all logs for the month and filter in memory to match each staff
+            const { data: logs, error: logsError } = await supabase
+                .from('timecard_logs')
                 .select('*')
-                .gte('date', startStr)
-                .lte('date', endStr);
-            if (tcError) throw tcError;
+                .gte('timestamp', startStr)
+                .lte('timestamp', endStr)
+                .order('timestamp', { ascending: true });
 
-            // 3. Calc
+            if (logsError) throw logsError;
+
+            // 3. Calculate for each staff
             const calculated: PayslipData[] = sortedStaff.map(staff => {
-                // Time
-                const staffTc = timecards?.filter(tc => tc.staff_id === staff.id) || [];
-                const totalHours = staffTc.reduce((sum, tc) => sum + (tc.worked_hours || 0), 0);
+                const staffLogs = logs?.filter(l => l.staff_id === staff.id) || [];
 
-                // Base
-                const baseWage = Math.floor(totalHours * (staff.hourly_wage || 0));
+                // Group by day to calculate daily work minutes
+                const dailyLogs = new Map<string, typeof staffLogs>();
+                staffLogs.forEach(log => {
+                    const dateStr = format(new Date(log.timestamp), 'yyyy-MM-dd');
+                    if (!dailyLogs.has(dateStr)) dailyLogs.set(dateStr, []);
+                    dailyLogs.get(dateStr)!.push(log);
+                });
+
+                let totalWorkMinutes = 0;
+
+                dailyLogs.forEach((dayLogs) => {
+                    const sorted = dayLogs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                    const firstIn = sorted.find(l => l.event_type === 'clock_in');
+                    const lastOut = sorted.slice().reverse().find(l => l.event_type === 'clock_out');
+
+                    if (firstIn && lastOut) {
+                        const start = new Date(firstIn.timestamp);
+                        const end = new Date(lastOut.timestamp);
+                        const grossMinutes = calculateNetWorkingMinutes(start, end);
+
+                        let totalBreakMinutes = 0;
+                        // Calculate break time
+                        let currentBreakStartLog: (typeof staffLogs)[0] | null = null;
+
+                        sorted.forEach(log => {
+                            const logTime = new Date(log.timestamp);
+                            if (logTime < start || logTime > end) return;
+
+                            if (log.event_type === 'break_start') {
+                                if (!currentBreakStartLog) currentBreakStartLog = log;
+                            } else if (log.event_type === 'break_end') {
+                                if (currentBreakStartLog) {
+                                    const bStart = new Date(currentBreakStartLog.timestamp);
+                                    const bEnd = logTime;
+                                    const bMinutes = calculateNetWorkingMinutes(bStart, bEnd);
+                                    totalBreakMinutes += bMinutes;
+                                    currentBreakStartLog = null;
+                                }
+                            }
+                        });
+
+                        totalWorkMinutes += Math.max(0, grossMinutes - totalBreakMinutes);
+                    }
+                });
+
+                // Format: Hours (for display)
+                const totalHours = formatHoursFromMinutes(totalWorkMinutes); // e.g. 1.5
+
+                // Base Wage Calculation (Use minutes for precision if possible, standard is usually Hours * Wage)
+                // But laborCalculator has calculateSalary(minutes, wage). Let's use that for better precision?
+                // Existing code was: Math.floor(totalHours * hourly_wage).
+                // Let's stick to simple Hours * Wage if that's the convention, OR use minute precision.
+                // Using minute precision is safer for "lost minutes" errors.
+                // Re-using laborCalculator.ts: calculateSalary(minutes, wage) -> floor((min/60)*wage)
+
+                // However, totalHours above is rounded to 2 decimals.
+                // Let's use exact minutes for calculation.
+                // const baseWage = Math.floor(totalHours * (staff.hourly_wage || 0)); // Old logic
+                // New Logic using Minute Precision:
+                const baseWage = Math.floor((totalWorkMinutes / 60) * (staff.hourly_wage || 0));
+
 
                 // Allowances
                 const allowanceItems = [];
@@ -104,22 +167,9 @@ function PayslipPageContent() {
                 if (staff.deduction2_name && staff.deduction2_value) deductionItems.push({ name: staff.deduction2_name, value: staff.deduction2_value });
                 const totalDeductions = deductionItems.reduce((s, i) => s + i.value, 0);
 
-                // Taxable for Income Tax? 
-                // Usually Taxable = Base + Allowances - (Social Insurance etc).
-                // Here "Deductions" might be Dormitory (After tax?) or Social Insurance (Pre tax?).
-                // User said "Deduction (Dormitory etc)". Dormitory is usually after tax deduction (payment). Social Insurance is pre-tax.
-                // However, without specific Social Insurance logic, we usually assume Tax is calculated on "Gross Revenue" (Total Wage).
-                // Let's assume Taxable Amount = Base + Allowances. (Standard simplified logic)
-                // If Deductions are "Social Ins", they should be subtracted. But usually explicit "Social Ins" has its own logic.
-                // Assuming "Deductions" are payments like Dorm/Uniform -> After tax.
-                // So Tax Base = Base + Allowances.
+                const grossForTax = baseWage + totalAllowances;
 
-                const grossForTax = baseWage + totalAllowances; // Simple assumption
-
-                // Recalculate Tax using strict logic
-                // Social Insurance 3270 matches 170k.
-                // If the user manually inputs Social Insurance as a deduction, we should probably subtract it?
-                // But for now, let's treat Tax Calc as independent based on Gross.
+                // Tax
                 const tax = calculateIncomeTax(grossForTax, staff.dependents || 0, staff.tax_category);
 
                 const netPay = (baseWage + totalAllowances) - (totalDeductions + tax);
