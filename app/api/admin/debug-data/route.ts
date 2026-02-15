@@ -160,24 +160,40 @@ export async function GET(request: Request) {
 // ----------------------------------------------------------------------
 
 async function fixSalaryData(supabase: any, startStr: string, endStr: string) {
-    // 1. Fetch Staff with Error Handling
+    // 1. Fetch Staff with Error Handling - Fetch ALL columns to inspect
     const { data: staffList, error: staffError } = await supabase
         .from('staff')
-        .select('id, display_name, hourly_wage, company_id');
+        .select('*');
 
     if (staffError) return { status: 'Error fetching staff', error: staffError };
     if (!staffList || staffList.length === 0) return { status: 'No staff found in database' };
 
+    // Detect Name Column
+    const sampleStaff = staffList[0];
+    const staffKeys = Object.keys(sampleStaff);
+    // Prioritize possible name columns
+    const nameColumn = staffKeys.find(k => ['display_name', 'name', 'full_name', 'user_name', 'username', 'staff_name', 'employee_name'].includes(k));
+    const wageColumn = staffKeys.find(k => ['hourly_wage', 'wage', 'unit_wage', 'salary', 'unit_price'].includes(k));
+
+    // If we can't find a name column, we can't match by name. Return helpful error.
+    if (!nameColumn) {
+        return {
+            status: 'Name column not found in staff table',
+            available_columns: staffKeys,
+            sample_row: sampleStaff
+        };
+    }
+
     // Normalize string for matching (remove spaces, lowercase)
-    const normalize = (s: string) => s ? s.replace(/\s+/g, '').toLowerCase() : '';
+    const normalize = (s: string) => s ? String(s).replace(/\s+/g, '').toLowerCase() : '';
 
     const staffMapById = new Map();
     const staffMapByName = new Map(); // Normalized Name -> Staff
 
     staffList.forEach((s: any) => {
         staffMapById.set(s.id, s);
-        if (s.display_name) {
-            staffMapByName.set(normalize(s.display_name), s);
+        if (s[nameColumn]) {
+            staffMapByName.set(normalize(s[nameColumn]), s);
         }
     });
 
@@ -202,14 +218,15 @@ async function fixSalaryData(supabase: any, startStr: string, endStr: string) {
         // If ID mismatch or not found, try Name Match
         if (!staff) {
             // Try various name columns that might exist in old schema
-            // Since we use 'any', we can try properties even if TS complains (but this is raw JS at runtime)
-            // Common names: staff_name, name, display_name, user_name
             const candidateNames = [
                 card.staff_name,
                 card.name,
                 card.display_name,
                 card.user_name,
-                card.employee_name
+                card.username,
+                card.employee_name,
+                // fallback if column match failed
+                card[nameColumn]
             ];
 
             for (const name of candidateNames) {
@@ -225,25 +242,24 @@ async function fixSalaryData(supabase: any, startStr: string, endStr: string) {
         }
 
         if (staff) {
-            if (debugSampleMatches.length < 5) debugSampleMatches.push({ card_id: card.id, staff: staff.display_name, method: matchMethod });
+            if (debugSampleMatches.length < 5) debugSampleMatches.push({ card_id: card.id, staff: staff[nameColumn], method: matchMethod });
 
             // Calculate work minutes for this card
             const workMins = calculateWorkMinutes(card.clock_in, card.clock_out, card.break_minutes);
-            const wage = Math.floor((workMins / 60) * (staff.hourly_wage || 0)); // Handle null wage
+            const hourlyWage = wageColumn ? (staff[wageColumn] || 0) : 0;
+            const wage = Math.floor((workMins / 60) * hourlyWage);
 
             // Update Timecard Logs with Correct Staff ID & Company ID
             const dayStart = `${card.date}T00:00:00`;
             const dayEnd = `${card.date}T23:59:59`;
 
-            // Only update if IDs differ or company_id missing (Optimize?)
-            // We just update to be safe.
             const { error: updateError } = await supabase
                 .from('timecard_logs')
                 .update({
                     staff_id: staff.id,
                     company_id: staff.company_id
                 })
-                .eq('staff_id', card.staff_id) // Match logs by OLD ID (assuming migration used OLD ID)
+                .eq('staff_id', card.staff_id) // Match logs by OLD ID
                 .gte('timestamp', dayStart)
                 .lte('timestamp', dayEnd);
 
@@ -251,7 +267,7 @@ async function fixSalaryData(supabase: any, startStr: string, endStr: string) {
                 // Add to report
                 if (!reportMap.has(staff.id)) {
                     reportMap.set(staff.id, {
-                        name: staff.display_name,
+                        name: staff[nameColumn],
                         total_minutes: 0,
                         total_wage: 0
                     });
@@ -266,7 +282,7 @@ async function fixSalaryData(supabase: any, startStr: string, endStr: string) {
                 unmatched.push({
                     card_id: card.id,
                     staff_id_old: card.staff_id,
-                    raw_card: JSON.stringify(card) // Full dump to see available fields
+                    raw_card_keys: Object.keys(card)
                 });
             }
         }
@@ -286,7 +302,11 @@ async function fixSalaryData(supabase: any, startStr: string, endStr: string) {
         updated_count: updatedCount,
         report: formattedReport,
         debug_matches: debugSampleMatches,
-        unmatched_samples: unmatched
+        unmatched_samples: unmatched,
+        detected_columns: {
+            name: nameColumn,
+            wage: wageColumn
+        }
     };
 }
 
