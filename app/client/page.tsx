@@ -5,12 +5,13 @@ import { supabase } from '@/utils/supabaseClient';
 import { useRouter } from 'next/navigation';
 import OrderCalendar from '@/components/OrderCalendar';
 import { Database } from '@/types/supabase';
-import { Plus, Package, Monitor } from 'lucide-react';
+import { Plus, Package, Monitor, Settings } from 'lucide-react';
 import ProductRegistrationModal from '@/components/ProductRegistrationModal';
 import ProductEditModal from '@/components/ProductEditModal';
 import ProductListModal from '@/components/ProductListModal';
 import OrderHistoryModal from '@/components/OrderHistoryModal';
 import ClientOrderDailyList from '@/components/ClientOrderDailyList';
+import ClientPinChangeModal from '@/components/ClientPinChangeModal';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -25,6 +26,7 @@ export default function ClientDashboard() {
     const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
     const [isProductListOpen, setIsProductListOpen] = useState(false);
     const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
+    const [isPinModalOpen, setIsPinModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
     // View State
@@ -92,12 +94,23 @@ export default function ClientDashboard() {
                             <p className="text-xs text-gray-500 font-bold mt-0.5">{companyName} 様専用ページ</p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => supabase.auth.signOut().then(() => router.push('/login'))}
-                        className="text-xs text-gray-400 hover:text-gray-700 font-bold border border-gray-200 px-3 py-1.5 rounded-full transition"
-                    >
-                        ログアウト
-                    </button>
+                    <div className="flex items-center space-x-3">
+                        {userCompanyId && (
+                            <button
+                                onClick={() => setIsPinModalOpen(true)}
+                                className="text-gray-500 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 p-2 rounded-full transition"
+                                title="PINコード変更"
+                            >
+                                <Settings size={20} />
+                            </button>
+                        )}
+                        <button
+                            onClick={() => supabase.auth.signOut().then(() => router.push('/login'))}
+                            className="text-xs text-gray-400 hover:text-gray-700 font-bold border border-gray-200 px-3 py-1.5 rounded-full transition"
+                        >
+                            ログアウト
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -184,6 +197,11 @@ export default function ClientDashboard() {
                 onClose={() => setEditingProduct(null)}
                 product={editingProduct}
                 onSave={() => fetchProducts(userCompanyId)}
+            />
+            <ClientPinChangeModal
+                isOpen={isPinModalOpen}
+                onClose={() => setIsPinModalOpen(false)}
+                companyId={userCompanyId}
             />
         </div>
     );
