@@ -10,15 +10,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
             <header className="bg-white shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <img src="/icon.png" alt="Logo" className="h-8 w-8 object-contain" />
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <img src="/icon.png" alt="Logo" className="h-10 w-10 object-contain" />
                         <h1 className="text-2xl font-black text-slate-800 tracking-tighter">チェックル</h1>
                     </div>
                     <AdminLockButton />
                 </div>
             </header >
-            <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10">
                 {children}
             </main>
             <footer className="bg-white border-t border-gray-200 mt-auto">

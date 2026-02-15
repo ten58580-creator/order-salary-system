@@ -637,14 +637,14 @@ function DashboardContent() {
                   <div className="flex items-center space-x-3 w-full md:w-auto justify-end">
                     <button
                       onClick={() => setShowArchived(!showArchived)}
-                      className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center transition border ${showArchived ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                      className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center transition border ${showArchived ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
                     >
                       <Archive size={14} className="mr-1" />
                       {showArchived ? 'アーカイブを表示中' : 'アーカイブを表示'}
                     </button>
                     <button
                       onClick={handleCreateStaff}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow flex items-center transition"
+                      className="btn-primary flex items-center text-sm"
                     >
                       <Users size={16} className="mr-2" />
                       従業員を追加
@@ -671,7 +671,7 @@ function DashboardContent() {
                     </div>
                   )}
 
-                  <div className={!isUnlocked ? 'filter blur-sm select-none' : ''}>
+                  <div className={`${!isUnlocked ? 'filter blur-sm select-none' : ''} overflow-x-auto`}>
                     <table className="min-w-full divide-y divide-slate-100">
                       <thead className="bg-slate-50">
                         <tr>
