@@ -14,9 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "チェックル",
   description: "クラウド型勤怠・給与管理システム",
-  // System Name Updated to Checkle
+  // System Name Updated to Checkle (2026-02-15 14:10)
 };
 
 export default function RootLayout({

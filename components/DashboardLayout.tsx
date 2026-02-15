@@ -21,7 +21,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <footer className="bg-white border-t border-gray-200 mt-auto">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <p className="text-center text-sm text-gray-500">© 2026 チェックル</p>
-                    {/* System Name Updated */}
+                    {/* System Name Updated (2026-02-15 14:10) */}
                 </div>
             </footer>
         </div >
