@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { supabase } from '@/utils/supabaseClient';
-import { Building, Plus, Edit, Trash2, Eye, EyeOff, ChevronLeft, Settings, Lock } from 'lucide-react';
+import { Building, Plus, Edit, Trash2, Eye, EyeOff, ChevronLeft, Settings, Lock, Clipboard, Check } from 'lucide-react';
 import Link from 'next/link';
 
 import AdminGuard from '@/components/AdminGuard';
@@ -314,62 +314,98 @@ function CompaniesContent() {
                         </div>
                     </>
                 ) : (
-                    /* Admin Settings Tab */
-                    <div className="bg-slate-50 rounded-xl p-8 max-w-2xl border border-slate-200">
-                        <h2 className="text-xl font-black text-slate-900 mb-6 flex items-center">
-                            <Lock className="mr-2 text-slate-600" size={24} />
-                            管理者PINコード設定
-                        </h2>
-                        <form onSubmit={handlePinChange} className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">現在のPINコード</label>
-                                <input
-                                    type="password"
-                                    inputMode="numeric"
-                                    required
-                                    value={pinForm.currentPin}
-                                    onChange={(e) => setPinForm({ ...pinForm, currentPin: e.target.value })}
-                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
-                                    placeholder="現在のPINを入力"
-                                />
-                            </div>
-                            <div className="border-t border-gray-200 my-6"></div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">新しいPINコード（4〜8桁）</label>
-                                <input
-                                    type="password"
-                                    inputMode="numeric"
-                                    required
-                                    pattern="\d{4,8}"
-                                    value={pinForm.newPin}
-                                    onChange={(e) => setPinForm({ ...pinForm, newPin: e.target.value })}
-                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
-                                    placeholder="新しいPINを入力"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">新しいPINコード（確認）</label>
-                                <input
-                                    type="password"
-                                    inputMode="numeric"
-                                    required
-                                    pattern="\d{4,8}"
-                                    value={pinForm.confirmPin}
-                                    onChange={(e) => setPinForm({ ...pinForm, confirmPin: e.target.value })}
-                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
-                                    placeholder="もう一度入力"
-                                />
-                            </div>
-                            <div className="pt-4">
+                    <div className="space-y-6 max-w-2xl">
+                        {/* Client Order URL Card */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <h2 className="text-lg font-black text-slate-900 mb-4 flex items-center">
+                                <Clipboard className="mr-2 text-blue-600" size={20} />
+                                顧客用発注URL
+                            </h2>
+                            <p className="text-sm text-gray-500 font-bold mb-3">
+                                顧客に共有する発注画面のURLです。
+                            </p>
+                            <div className="flex items-center space-x-2">
+                                <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 font-mono text-sm text-slate-600 break-all">
+                                    https://checkle.vercel.app/client
+                                </div>
                                 <button
-                                    type="submit"
-                                    disabled={pinLoading}
-                                    className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition shadow-lg w-full flex justify-center items-center disabled:opacity-50"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText('https://checkle.vercel.app/client');
+                                        const btn = document.getElementById('copy-btn');
+                                        if (btn) {
+                                            const originalContent = btn.innerHTML;
+                                            btn.innerHTML = '<span class="flex items-center text-green-600"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check mr-1"><path d="M20 6 9 17l-5-5"/></svg>コピー完了</span>';
+                                            setTimeout(() => {
+                                                btn.innerHTML = originalContent;
+                                            }, 2000);
+                                        }
+                                    }}
+                                    id="copy-btn"
+                                    className="btn-secondary whitespace-nowrap flex items-center"
                                 >
-                                    {pinLoading ? '更新中...' : 'PINコードを変更する'}
+                                    <Clipboard size={16} className="mr-2" />
+                                    コピー
                                 </button>
                             </div>
-                        </form>
+                        </div>
+
+                        {/* Admin PIN Settings */}
+                        <div className="bg-slate-50 rounded-xl p-8 border border-slate-200">
+                            <h2 className="text-xl font-black text-slate-900 mb-6 flex items-center">
+                                <Lock className="mr-2 text-slate-600" size={24} />
+                                管理者PINコード設定
+                            </h2>
+                            <form onSubmit={handlePinChange} className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">現在のPINコード</label>
+                                    <input
+                                        type="password"
+                                        inputMode="numeric"
+                                        required
+                                        value={pinForm.currentPin}
+                                        onChange={(e) => setPinForm({ ...pinForm, currentPin: e.target.value })}
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
+                                        placeholder="現在のPINを入力"
+                                    />
+                                </div>
+                                <div className="border-t border-gray-200 my-6"></div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">新しいPINコード（4〜8桁）</label>
+                                    <input
+                                        type="password"
+                                        inputMode="numeric"
+                                        required
+                                        pattern="\d{4,8}"
+                                        value={pinForm.newPin}
+                                        onChange={(e) => setPinForm({ ...pinForm, newPin: e.target.value })}
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
+                                        placeholder="新しいPINを入力"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">新しいPINコード（確認）</label>
+                                    <input
+                                        type="password"
+                                        inputMode="numeric"
+                                        required
+                                        pattern="\d{4,8}"
+                                        value={pinForm.confirmPin}
+                                        onChange={(e) => setPinForm({ ...pinForm, confirmPin: e.target.value })}
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-lg font-bold text-slate-950 placeholder:text-gray-400"
+                                        placeholder="もう一度入力"
+                                    />
+                                </div>
+                                <div className="pt-4">
+                                    <button
+                                        type="submit"
+                                        disabled={pinLoading}
+                                        className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition shadow-lg w-full flex justify-center items-center disabled:opacity-50"
+                                    >
+                                        {pinLoading ? '更新中...' : 'PINコードを変更する'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 )}
 
