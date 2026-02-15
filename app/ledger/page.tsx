@@ -8,6 +8,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { startOfMonth, endOfMonth, format, subMonths, addMonths, parse } from 'date-fns';
 import { FileText, Printer, Save, RefreshCw, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { calculateNetWorkingMinutes, calculateSalary, formatHoursFromMinutes } from '@/utils/laborCalculator';
 
 type Staff = Database['public']['Tables']['staff']['Row'];
 // type Timecard = Database['public']['Tables']['timecards']['Row'];
@@ -52,8 +53,8 @@ function LedgerPageContent() {
     async function fetchData() {
         try {
             setLoading(true);
-            const startStr = format(startOfMonth(currentDate), 'yyyy-MM-dd');
-            const endStr = format(endOfMonth(currentDate), 'yyyy-MM-dd');
+            const startStr = format(startOfMonth(currentDate), 'yyyy-MM-dd') + 'T00:00:00';
+            const endStr = format(endOfMonth(currentDate), 'yyyy-MM-dd') + 'T23:59:59';
 
             // Fetch Staff
             const { data: staffData, error: staffError } = await supabase
@@ -73,29 +74,74 @@ function LedgerPageContent() {
                     return pinA - pinB;
                 });
 
-            if (staffError) throw staffError;
-
-            // Fetch Timecards
-            const { data: timecardsData, error: timecardsError } = await supabase
-                .from('timecards')
+            // Fetch Timecard Logs
+            const { data: logsData, error: logsError } = await supabase
+                .from('timecard_logs')
                 .select('*')
-                .gte('date', startStr)
-                .lte('date', endStr);
+                .gte('timestamp', startStr)
+                .lte('timestamp', endStr)
+                .order('timestamp', { ascending: true });
 
-            if (timecardsError) throw timecardsError;
+            if (logsError) throw logsError;
 
             // Aggregate
             const ledgerEntries = sortedStaff.map((staff) => {
-                const staffTimecards = (timecardsData || []).filter(
-                    (tc) => tc.staff_id === staff.id
-                );
+                const staffLogs = (logsData || []).filter(l => l.staff_id === staff.id);
 
-                const totalHours = staffTimecards.reduce((sum, tc) => {
-                    return sum + (tc.worked_hours ?? 0);
-                }, 0);
+                // Group by day to calculate daily work minutes
+                const dailyLogs = new Map<string, typeof staffLogs>();
+                staffLogs.forEach(log => {
+                    const dateStr = format(new Date(log.timestamp), 'yyyy-MM-dd');
+                    if (!dailyLogs.has(dateStr)) dailyLogs.set(dateStr, []);
+                    dailyLogs.get(dateStr)!.push(log);
+                });
+
+                let totalMinutes = 0;
+
+                dailyLogs.forEach((dayLogs) => {
+                    const sorted = dayLogs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                    const firstIn = sorted.find(l => l.event_type === 'clock_in');
+                    const lastOut = sorted.slice().reverse().find(l => l.event_type === 'clock_out');
+
+                    if (firstIn && lastOut) {
+                        const start = new Date(firstIn.timestamp);
+                        const end = new Date(lastOut.timestamp);
+                        const grossMinutes = calculateNetWorkingMinutes(start, end);
+
+                        let totalBreakMinutes = 0;
+                        // Calculate break time
+                        let currentBreakStart: typeof staffLogs[0] | null = null;
+
+                        sorted.forEach(log => {
+                            const logTime = new Date(log.timestamp);
+                            if (logTime < start || logTime > end) return;
+
+                            if (log.event_type === 'break_start') {
+                                if (!currentBreakStart) currentBreakStart = log;
+                            } else if (log.event_type === 'break_end') {
+                                if (currentBreakStart) {
+                                    const bStart = new Date(currentBreakStart.timestamp);
+                                    const bEnd = logTime;
+                                    const bMinutes = calculateNetWorkingMinutes(bStart, bEnd);
+                                    totalBreakMinutes += bMinutes;
+                                    currentBreakStart = null;
+                                }
+                            }
+                        });
+
+                        totalMinutes += Math.max(0, grossMinutes - totalBreakMinutes);
+                    }
+                });
 
                 const hourlyWage = staff.hourly_wage || 0;
-                const grossWage = Math.floor(totalHours * hourlyWage);
+
+                // Use unified calculator
+                const grossWage = calculateSalary(totalMinutes, hourlyWage);
+                const totalHours = formatHoursFromMinutes(totalMinutes);
+
+                // Tax
+                // Note: Ledger usually focuses on Gross, Tax, Net. 
+                // Using the specific tax calculator logic
                 const incomeTax = calculateIncomeTax(grossWage, staff.dependents ?? 0, staff.tax_category);
                 const netPay = grossWage - incomeTax;
 

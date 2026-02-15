@@ -77,7 +77,7 @@ function AnalyticsContent() {
     const [staffMap, setStaffMap] = useState<Map<string, number>>(new Map()); // id -> hourly_wage
 
     // Attendance Data
-    const [attendanceData, setAttendanceData] = useState<TimeCard[]>([]);
+    const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
     const [factoryStartTime, setFactoryStartTime] = useState<string | null>(null);
     const [factoryEndTime, setFactoryEndTime] = useState<string | null>(null);
 
@@ -91,6 +91,10 @@ function AnalyticsContent() {
         }, 1000);
         return () => clearInterval(interval);
     }, []);
+
+    // ------------------------------------------------------------------
+    // Data Fetching
+    // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------
     // Data Fetching
@@ -136,24 +140,42 @@ function AnalyticsContent() {
                 setItems(fetchedItems);
             }
 
-            // 2. Fetch Attendance
-            const { data: attData } = await supabase
-                .from('timecards')
-                .select('staff_id, clock_in, clock_out, date')
-                .eq('date', date);
+            // 2. Fetch Attendance Logs instead of 'timecards'
+            const startStr = date + 'T00:00:00';
+            const endStr = date + 'T23:59:59';
 
-            if (attData && attData.length > 0) {
-                setAttendanceData(attData);
-                let minIn = '23:59';
-                let maxOut = '00:00';
-                attData.forEach(card => {
-                    if (card.clock_in < minIn) minIn = card.clock_in;
-                    if (card.clock_out > maxOut) maxOut = card.clock_out;
-                });
-                setFactoryStartTime(minIn !== '23:59' ? minIn : null);
-                setFactoryEndTime(maxOut !== '00:00' ? maxOut : null);
+            const { data: logsData, error: logsError } = await supabase
+                .from('timecard_logs')
+                .select('*')
+                .gte('timestamp', startStr)
+                .lte('timestamp', endStr)
+                .order('timestamp', { ascending: true });
+
+            if (logsData) {
+                // Determine Factory Open/Close
+                const clockIns = logsData.filter(l => l.event_type === 'clock_in');
+                const clockOuts = logsData.filter(l => l.event_type === 'clock_out');
+
+                let minIn: string | null = null;
+                let maxOut: string | null = null;
+
+                if (clockIns.length > 0) {
+                    const sortedIns = clockIns.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                    minIn = format(new Date(sortedIns[0].timestamp), 'HH:mm');
+                }
+
+                if (clockOuts.length > 0) {
+                    const sortedOuts = clockOuts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                    maxOut = format(new Date(sortedOuts[0].timestamp), 'HH:mm');
+                }
+
+                setFactoryStartTime(minIn);
+                setFactoryEndTime(maxOut);
+
+                // Store raw logs for calculation
+                setAttendanceLogs(logsData);
             } else {
-                setAttendanceData([]);
+                setAttendanceLogs([]);
                 setFactoryStartTime(null);
                 setFactoryEndTime(null);
             }
@@ -202,12 +224,42 @@ function AnalyticsContent() {
         return calculateNetWorkingMinutes(s, e);
     };
 
-    const getTimeCardMinutes = (card: TimeCard) => {
-        if (!card.clock_in || !card.clock_out) return 0;
-        const s = new Date(`${currentDate}T${card.clock_in}:00`);
-        const e = new Date(`${currentDate}T${card.clock_out}:00`);
-        return calculateNetWorkingMinutes(s, e);
+    // Helper to calculate total minutes for a staff from logs
+    const calculateStaffDailyMinutes = (staffId: string, logs: any[]) => {
+        const staffLogs = logs.filter(l => l.staff_id === staffId);
+        if (staffLogs.length === 0) return 0;
+
+        const sorted = staffLogs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        const firstIn = sorted.find(l => l.event_type === 'clock_in');
+        const lastOut = sorted.slice().reverse().find(l => l.event_type === 'clock_out');
+
+        if (!firstIn || !lastOut) return 0;
+
+        const start = new Date(firstIn.timestamp);
+        const end = new Date(lastOut.timestamp);
+        const gross = calculateNetWorkingMinutes(start, end);
+
+        let totalBreak = 0;
+        let currentBreakStart: any = null;
+
+        sorted.forEach(log => {
+            const t = new Date(log.timestamp);
+            if (t < start || t > end) return;
+
+            if (log.event_type === 'break_start') {
+                if (!currentBreakStart) currentBreakStart = log;
+            } else if (log.event_type === 'break_end') {
+                if (currentBreakStart) {
+                    const bStart = new Date(currentBreakStart.timestamp);
+                    totalBreak += calculateNetWorkingMinutes(bStart, t);
+                    currentBreakStart = null;
+                }
+            }
+        });
+
+        return Math.max(0, gross - totalBreak);
     };
+
 
     const changeDate = (days: number) => {
         const date = new Date(currentDate);
@@ -223,11 +275,18 @@ function AnalyticsContent() {
         let totalAttendanceMinutes = 0;
         let totalLaborCost = 0;
 
-        attendanceData.forEach(card => {
-            const minutes = getTimeCardMinutes(card);
+        // Group logs by staff
+        const logsByStaff = new Map<string, any[]>();
+        (attendanceLogs || []).forEach(log => {
+            if (!logsByStaff.has(log.staff_id)) logsByStaff.set(log.staff_id, []);
+            logsByStaff.get(log.staff_id)!.push(log);
+        });
+
+        logsByStaff.forEach((logs, staffId) => {
+            const minutes = calculateStaffDailyMinutes(staffId, logs);
             totalAttendanceMinutes += minutes;
 
-            const wage = staffMap.get(card.staff_id) || 1100; // Default wage
+            const wage = staffMap.get(staffId) || 1100; // Default wage
             totalLaborCost += calculateSalary(minutes, wage);
         });
 

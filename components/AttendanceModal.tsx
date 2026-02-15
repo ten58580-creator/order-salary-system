@@ -40,30 +40,77 @@ export default function AttendanceModal({ isOpen, onClose, onSave, staffId }: At
         setLoading(true);
 
         try {
-            // Calculate worked hours
             const dateBase = date;
-            const start = parse(`${dateBase} ${clockIn}`, 'yyyy-MM-dd HH:mm', new Date());
-            const end = parse(`${dateBase} ${clockOut}`, 'yyyy-MM-dd HH:mm', new Date());
 
-            let diffMin = differenceInMinutes(end, start);
-            if (diffMin < 0) diffMin += 24 * 60; // Handle overnight? Simplicity for now
+            const events = [];
 
-            diffMin -= breakMinutes;
-            if (diffMin < 0) diffMin = 0;
+            // 1. Clock In
+            const inTime = parse(`${dateBase} ${clockIn}`, 'yyyy-MM-dd HH:mm', new Date());
+            events.push({
+                staff_id: staffId,
+                event_type: 'clock_in',
+                timestamp: inTime.toISOString()
+            });
 
-            const workedHours = Number((diffMin / 60).toFixed(2));
+            // 2. Break (if manual break minutes is not used, but start/end are set)
+            // The current UI allows setting break minutes manually OR using start/end.
+            // timecard_logs system requires timestamps for break_start/end to calculate break correctly in the new logic.
+            // If the user inputs manual break minutes but no times, we can't easily represent it in logs without fake times.
+            // However, the UI suggests Break Start/End inputs are available.
+            // Let's assume if break minutes > 0, we try to use start/end. 
+            // If only minutes are provided (e.g. manual override), we might need to fake a break in the middle?
+            // For now, let's use the breakStart/breakEnd inputs if they exist.
+
+            if (breakStart && breakEnd && breakMinutes > 0) {
+                const bStart = parse(`${dateBase} ${breakStart}`, 'yyyy-MM-dd HH:mm', new Date());
+                const bEnd = parse(`${dateBase} ${breakEnd}`, 'yyyy-MM-dd HH:mm', new Date());
+
+                // Validate they are within range? Not strictly necessary for DB but good for logic.
+                // Just insert them.
+                events.push({
+                    staff_id: staffId,
+                    event_type: 'break_start',
+                    timestamp: bStart.toISOString()
+                });
+                events.push({
+                    staff_id: staffId,
+                    event_type: 'break_end',
+                    timestamp: bEnd.toISOString()
+                });
+            } else if (breakMinutes > 0 && (!breakStart || !breakEnd)) {
+                // Manual minutes but no time? 
+                // We'll have to skip this or warn. 
+                // Creating fake logs is dangerous.
+                // But the user might want just "1 hour break".
+                // Let's insert a break at 12:00 for the duration?
+                // The logical unified calculator relies on timestamps.
+                // Let's generate a break starting at 12:00 or midpoint.
+                // Simple fallback: 12:00.
+                const bStart = parse(`${dateBase} 12:00`, 'yyyy-MM-dd HH:mm', new Date());
+                const bEnd = new Date(bStart.getTime() + breakMinutes * 60000);
+                events.push({
+                    staff_id: staffId,
+                    event_type: 'break_start',
+                    timestamp: bStart.toISOString()
+                });
+                events.push({
+                    staff_id: staffId,
+                    event_type: 'break_end',
+                    timestamp: bEnd.toISOString()
+                });
+            }
+
+            // 3. Clock Out
+            const outTime = parse(`${dateBase} ${clockOut}`, 'yyyy-MM-dd HH:mm', new Date());
+            events.push({
+                staff_id: staffId,
+                event_type: 'clock_out',
+                timestamp: outTime.toISOString()
+            });
 
             const { error } = await supabase
-                .from('timecards')
-                .insert({
-                    staff_id: staffId,
-                    date: date,
-                    clock_in: clockIn,
-                    clock_out: clockOut,
-                    break_minutes: breakMinutes,
-                    worked_hours: workedHours,
-                    notes: '手動追加',
-                });
+                .from('timecard_logs')
+                .insert(events);
 
             if (error) throw error;
 

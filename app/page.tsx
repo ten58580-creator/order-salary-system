@@ -13,6 +13,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import StaffEditModal from '@/components/StaffEditModal';
 import DailyDetailModal from '@/components/DailyDetailModal';
 import ConfirmationModal from '@/components/ConfirmationModal';
+import { calculateNetWorkingMinutes, calculateSalary, formatHoursFromMinutes } from '@/utils/laborCalculator';
 
 import AdminPinModal from '@/components/AdminPinModal';
 import { useAdminGuard } from '@/components/AdminGuardContext';
@@ -244,11 +245,8 @@ function DashboardContent() {
   async function fetchData() {
     try {
       setLoading(true);
-      const startStr = format(startOfMonth(currentDate), 'yyyy-MM-dd');
-      const endStr = format(endOfMonth(currentDate), 'yyyy-MM-dd');
-      // For logs, we need full timestamp range
-      const startTimestamp = startOfMonth(currentDate).toISOString();
-      const endTimestamp = endOfMonth(currentDate).toISOString();
+      const startStr = format(startOfMonth(currentDate), 'yyyy-MM-dd') + 'T00:00:00';
+      const endStr = format(endOfMonth(currentDate), 'yyyy-MM-dd') + 'T23:59:59';
 
       const { data: staffData, error: staffError } = await supabase.from('staff').select('*').order('id');
       if (staffError) throw staffError;
@@ -271,20 +269,14 @@ function DashboardContent() {
       const { data: logsData, error: logsError } = await supabase
         .from('timecard_logs')
         .select('*')
-        .gte('timestamp', startTimestamp)
-        .lte('timestamp', endTimestamp)
+        .gte('timestamp', startStr)
+        .lte('timestamp', endStr)
         .order('timestamp', { ascending: true }); // Important: Ascending for timeline processing
 
       if (logsError) throw logsError;
 
       // 2. Process Logs to Calculate Hours per Day per Staff
-      // 2. Process Logs to Calculate Hours per Day per Staff
-      // Import the new utility at the top of file first! (I will add import via separate block if needed but let's try to do it in one go if I can see imports, but I can't see imports here. So I will assume I need to add import line separately or just use the logic here for now and refactor later? No, user wants me to use the utility.
-      // I'll add the import in a separate tool call to be safe, or just rewrite the whole file content section if I am confident.
-      // Actually, I can use `differenceInSeconds` from `date-fns` which is already imported in `app/page.tsx`.
-      // Wait, I created a utility. I should use it.
-
-      const staffDailyHours = new Map<string, Map<string, number>>(); // staffId -> date -> hours
+      const staffDailyHours = new Map<string, Map<string, number>>(); // staffId -> date -> minutes
 
       // Helper to init map
       const addMinutes = (staffId: string, date: string, minutes: number) => {
@@ -302,45 +294,52 @@ function DashboardContent() {
 
       // Calculate hours for each staff
       logsByStaff.forEach((logs, staffId) => {
-        // Sort by timestamp just in case
-        logs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        // Group by day for accurate pairing (assuming shift doesn't cross midnight for now, or just pairing within day)
+        // If shifts cross midnight, we need more complex logic. For now assuming simple daily logic or global stream logic.
+        // Let's use the same logic as Payslip: Group by day.
 
-        let currentWorkStart: Date | null = null;
-        let currentBreakStart: Date | null = null;
+        const logsByDay = new Map<string, typeof logs>();
+        logs.forEach(l => {
+          const day = format(new Date(l.timestamp), 'yyyy-MM-dd');
+          if (!logsByDay.has(day)) logsByDay.set(day, []);
+          logsByDay.get(day)!.push(l);
+        });
 
-        logs.forEach(log => {
-          const logTime = new Date(log.timestamp);
-          const logDateStr = format(logTime, 'yyyy-MM-dd'); // We attribute to the event day (or start day?)
+        logsByDay.forEach((dayLogs, dateStr) => {
+          const sorted = dayLogs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-          if (log.event_type === 'clock_in') {
-            if (!currentWorkStart) currentWorkStart = logTime;
-          } else if (log.event_type === 'clock_out') {
-            if (currentWorkStart) {
-              // Strict Minute Calculation: FLOOR(seconds / 60)
-              const diffSeconds = differenceInSeconds(logTime, currentWorkStart);
-              const minutes = Math.floor(diffSeconds > 0 ? diffSeconds / 60 : 0);
+          const firstIn = sorted.find(l => l.event_type === 'clock_in');
+          const lastOut = sorted.slice().reverse().find(l => l.event_type === 'clock_out');
 
-              // Attribute to the day of START
-              const workDateStr = format(currentWorkStart, 'yyyy-MM-dd');
-              addMinutes(staffId, workDateStr, minutes);
-              currentWorkStart = null;
-              currentBreakStart = null;
-            }
-          } else if (log.event_type === 'break_start') {
-            if (currentWorkStart && !currentBreakStart) {
-              currentBreakStart = logTime;
-            }
-          } else if (log.event_type === 'break_end') {
-            if (currentWorkStart && currentBreakStart) {
-              // Strict Minute Calculation for Break
-              const breakSeconds = differenceInSeconds(logTime, currentBreakStart);
-              const breakMinutes = Math.floor(breakSeconds > 0 ? breakSeconds / 60 : 0);
+          if (firstIn && lastOut) {
+            const start = new Date(firstIn.timestamp);
+            const end = new Date(lastOut.timestamp);
 
-              const breakDateStr = format(currentBreakStart, 'yyyy-MM-dd');
-              // Subtract break minutes
-              addMinutes(staffId, breakDateStr, -breakMinutes);
-              currentBreakStart = null;
-            }
+            // Gross minutes
+            const grossMinutes = calculateNetWorkingMinutes(start, end);
+
+            // Break minutes
+            let totalBreakMinutes = 0;
+            let currentBreakStart: typeof logs[0] | null = null;
+
+            sorted.forEach(log => {
+              const t = new Date(log.timestamp);
+              if (t < start || t > end) return; // Ignore logs outside main shift
+
+              if (log.event_type === 'break_start') {
+                if (!currentBreakStart) currentBreakStart = log;
+              } else if (log.event_type === 'break_end') {
+                if (currentBreakStart) {
+                  const bStart = new Date(currentBreakStart.timestamp);
+                  const bEnd = t;
+                  totalBreakMinutes += calculateNetWorkingMinutes(bStart, bEnd);
+                  currentBreakStart = null;
+                }
+              }
+            });
+
+            const netMinutes = Math.max(0, grossMinutes - totalBreakMinutes);
+            addMinutes(staffId, dateStr, netMinutes);
           }
         });
       });
@@ -360,18 +359,17 @@ function DashboardContent() {
         if (totalMinutes < 0) totalMinutes = 0;
 
         const hourlyWage = staff.hourly_wage || 1100;
-        // Wage Calculation: Floor(Minutes * (Wage / 60))
-        const totalWage = Math.floor(totalMinutes * (hourlyWage / 60));
 
-        // Hour Display: Minutes / 60
-        const totalHours = Math.floor((totalMinutes / 60) * 100) / 100;
+        // Use unified calculation
+        const totalWage = calculateSalary(totalMinutes, hourlyWage);
+        const totalHours = formatHoursFromMinutes(totalMinutes);
 
         // Estimated Tax (using staff's dependents and tax category)
         const estimatedTax = calculateIncomeTax(totalWage, staff.dependents ?? 0, staff.tax_category);
 
         return {
           staff,
-          totalHours,
+          totalHours, // number (float 2 decimals)
           totalWage,
           estimatedTax
         };
@@ -383,8 +381,8 @@ function DashboardContent() {
       const { data: orderData } = await supabase
         .from('orders')
         .select('actual_quantity')
-        .gte('order_date', startStr)
-        .lte('order_date', endStr);
+        .gte('order_date', format(startOfMonth(currentDate), 'yyyy-MM-dd'))
+        .lte('order_date', format(endOfMonth(currentDate), 'yyyy-MM-dd'));
 
       const totalPacksVal = (orderData || []).reduce((sum, o) => sum + (o.actual_quantity || 0), 0);
       setTotalPacks(totalPacksVal);
@@ -404,8 +402,8 @@ function DashboardContent() {
           }
           const dayStat = statsMap.get(date)!;
 
-          const wage = Math.floor(minutes * ((staff.hourly_wage || 1100) / 60));
-          const hours = Math.floor((minutes / 60) * 100) / 100;
+          const wage = calculateSalary(minutes, staff.hourly_wage || 1100);
+          const hours = formatHoursFromMinutes(minutes);
 
           dayStat.details.push({
             staffName: staff.name,
