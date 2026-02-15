@@ -63,7 +63,7 @@ export default function LoginPage() {
                         <ClipboardList size={48} className="text-blue-600" />
                     </div>
                     <h1 className="text-3xl font-black text-slate-800 tracking-tight">
-                        Checkle
+                        チェックル
                     </h1>
                     <p className="text-slate-500 font-bold mt-2">勤怠・給与管理システム</p>
                     {/* End of the requested change */}
