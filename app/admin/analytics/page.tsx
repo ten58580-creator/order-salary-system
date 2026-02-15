@@ -146,8 +146,10 @@ function AnalyticsContent() {
 
             const logsResponse = await fetch(`/api/admin/attendance-logs?start=${encodeURIComponent(startStr)}&end=${encodeURIComponent(endStr)}`, {
                 cache: 'no-store',
+                next: { revalidate: 0 },
                 headers: {
-                    'Pragma': 'no-cache'
+                    'Pragma': 'no-cache',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate'
                 }
             });
 
