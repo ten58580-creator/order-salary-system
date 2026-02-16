@@ -9,6 +9,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const key = searchParams.get('key');
     const serviceKeyInput = searchParams.get('service_key');
+    const action = searchParams.get('action'); // 'link_names' or 'sync_company'
 
     // Auth Check
     if (key !== 'admin123') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -21,11 +22,54 @@ export async function GET(request: Request) {
     });
 
     try {
-        const result = await forceLinkStaff(supabase);
-        return NextResponse.json(result);
+        if (action === 'sync_company') {
+            const result = await syncCompanyIds(supabase);
+            return NextResponse.json(result);
+        } else {
+            // Default: Link by Name
+            const result = await forceLinkStaff(supabase);
+            return NextResponse.json(result);
+        }
     } catch (e: any) {
         return NextResponse.json({ error: e.message, stack: e.stack }, { status: 500 });
     }
+}
+
+async function syncCompanyIds(supabase: any) {
+    // 1. Fetch Staff to get correct Company IDs
+    const { data: staffList, error: staffError } = await supabase.from('staff').select('id, company_id, display_name');
+    if (staffError) throw staffError;
+
+    let updatedCount = 0;
+    const errors = [];
+    const details = [];
+
+    // 2. Update timecard_logs for each staff
+    // This is N+1 updates but ensures correctness per staff. 
+    // Given 258 records and ~13 staff, it's fast enough.
+    for (const staff of staffList) {
+        if (!staff.company_id) continue;
+
+        const { count, error } = await supabase
+            .from('timecard_logs')
+            .update({ company_id: staff.company_id })
+            .eq('staff_id', staff.id)
+            .select('*', { count: 'exact', head: true });
+
+        if (error) {
+            errors.push({ staff: staff.display_name, msg: error.message });
+        } else {
+            updatedCount += (count || 0);
+            details.push({ staff: staff.display_name, count: count, company_id: staff.company_id });
+        }
+    }
+
+    return {
+        status: 'Company ID Sync Completed',
+        total_logs_updated: updatedCount,
+        details,
+        errors
+    };
 }
 
 async function forceLinkStaff(supabase: any) {
@@ -36,9 +80,7 @@ async function forceLinkStaff(supabase: any) {
     // Build Maps for Name Matching
     const normalize = (s: string) => s ? String(s).replace(/\s+/g, '').toLowerCase() : '';
     const nameToNewStaff = new Map();
-    const updatedLogCounts = new Map();
 
-    // Column detection helper logic copied from previous success
     const sampleStaff = staffList[0] || {};
     const staffKeys = Object.keys(sampleStaff);
     const nameColumn = staffKeys.find(k => ['display_name', 'name', 'full_name', 'user_name', 'username', 'staff_name'].includes(k)) || 'id';
@@ -49,12 +91,9 @@ async function forceLinkStaff(supabase: any) {
     });
 
     // 2. Fetch OLD Timecards to get the mapping (Old ID -> Name)
-    // We assume timecard_logs currently has OLD IDs or Partial IDs.
-    // We will iterate OLD timecards, find the name, find the New Staff ID, and update logs that match the OLD Timecard's Staff ID.
     const { data: oldTimecards, error: oldError } = await supabase.from('timecards').select('staff_id, staff_name, name, display_name, user_name, employee_name');
     if (oldError) throw oldError;
 
-    // Distinct Old Staff IDs
     const oldStaffMap = new Map(); // Old ID -> Name List
     oldTimecards.forEach((card: any) => {
         if (!oldStaffMap.has(card.staff_id)) {
@@ -63,12 +102,11 @@ async function forceLinkStaff(supabase: any) {
         }
     });
 
-    let totalUpdates = 0;
     const details = [];
+    let updatedGroups = 0;
 
-    // 3. Execute Updates
+    // 3. Execute Updates based on Name Matching
     for (const [oldId, names] of oldStaffMap.entries()) {
-        // Find matching new staff
         let matchedNewStaff = null;
         let matchName = '';
 
@@ -82,45 +120,28 @@ async function forceLinkStaff(supabase: any) {
         }
 
         if (matchedNewStaff) {
-            // Update timecard_logs where staff_id = oldId to matchedNewStaff.id
-            // AND also update company_id while we are at it
-
-            // Check if Old ID != New ID to avoid redundant updates (optional, but safer to just update)
-            const { count, error: updateError } = await supabase
+            // Update using OLD ID match
+            const { error: updateError } = await supabase
                 .from('timecard_logs')
                 .update({
                     staff_id: matchedNewStaff.id,
                     company_id: matchedNewStaff.company_id
                 })
-                .eq('staff_id', oldId)
-                .select('*', { count: 'exact', head: true }); // We want to know how many rows affected
-
-            // Note: Supabase update doesn't return count easily without select.
-            // Actually, we can just assume success if no error.
-            // But to get count we might need a separate query or trust the return.
-
-            // Let's rely on a separate query to count *potential* targets? No, expensive.
-            // Just fire the update.
-            // We can't easily get "rows affected" via standard postgrest-js without 'select' and returning data, which is heavy.
-            // Let's just log the attempt.
+                .eq('staff_id', oldId);
 
             details.push({
                 old_id: oldId,
                 matched_name: matchName,
                 new_id: matchedNewStaff.id,
-                result: updateError ? updateError.message : 'Update command sent'
+                result: updateError ? updateError.message : 'Sent update'
             });
-        } else {
-            details.push({
-                old_id: oldId,
-                names_tried: names,
-                result: 'No matching staff found in new table'
-            });
+            updatedGroups++;
         }
     }
 
     return {
-        status: 'Force Link Logic Executed',
+        status: 'Name Linking Executed',
+        matched_groups: updatedGroups,
         details
     };
 }
