@@ -291,7 +291,7 @@ function DashboardContent() {
 
       // Group logs by staff
       const logsByStaff = new Map<string, any[]>();
-      (logsData || []).forEach(log => {
+      (logsData || []).forEach((log: any) => {
         if (!logsByStaff.has(log.staff_id)) logsByStaff.set(log.staff_id, []);
         logsByStaff.get(log.staff_id)!.push(log);
       });
