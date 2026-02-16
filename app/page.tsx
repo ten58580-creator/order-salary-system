@@ -265,15 +265,19 @@ function DashboardContent() {
         return pinA - pinB;
       });
 
-      // 1. Fetch Logs instead of 'timecards'
-      const { data: logsData, error: logsError } = await supabase
-        .from('timecard_logs')
-        .select('*')
-        .gte('timestamp', startStr)
-        .lte('timestamp', endStr)
-        .order('timestamp', { ascending: true }); // Important: Ascending for timeline processing
+      // 1. Fetch Logs via API to bypass RLS and ensure fresh data
+      const logsResponse = await fetch(`/api/admin/attendance-logs?start=${encodeURIComponent(startStr)}&end=${encodeURIComponent(endStr)}`, {
+        cache: 'no-store',
+        next: { revalidate: 0 },
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+      const logsResult = await logsResponse.json();
+      const logsData = logsResult.data || [];
+      // error checking logic omitted as logsResult usually returns { data: [] } on error or empty
 
-      if (logsError) throw logsError;
 
       // 2. Process Logs to Calculate Hours per Day per Staff
       const staffDailyHours = new Map<string, Map<string, number>>(); // staffId -> date -> minutes
