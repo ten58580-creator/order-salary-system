@@ -43,46 +43,50 @@ export async function GET(request: Request) {
 }
 
 async function superForceSync(supabase: any) {
-    // 1. Get Valid Target Company ID from a sample staff (e.g., '城間' or just the first one)
+    // 1. Get TEN&A Company ID
+    // Try to find company named like 'TEN&A' or just take the first one since it's a single company system
+    const { data: companies, error: compError } = await supabase.from('companies').select('*');
+    if (compError) throw compError;
+
+    let targetCompany = (companies || []).find((c: any) => c.name && c.name.includes('TEN'));
+    if (!targetCompany && companies && companies.length > 0) targetCompany = companies[0];
+
+    if (!targetCompany) {
+        // Fallback to staff's company_id if companies table is empty/inaccessible
+        const { data: sList } = await supabase.from('staff').select('company_id').not('company_id', 'is', null).limit(1);
+        if (sList && sList.length > 0) targetCompany = { id: sList[0].company_id, name: 'Fallback from Staff' };
+    }
+
+    const TARGET_COMPANY_ID = targetCompany?.id;
+    if (!TARGET_COMPANY_ID) throw new Error('CRITICAL: Could not determine (Stock) TEN&A Company ID');
+
+    // 2. Prepare Staff Maps
     const { data: staffList, error: staffError } = await supabase.from('staff').select('*');
     if (staffError) throw staffError;
-    if (!staffList || staffList.length === 0) throw new Error('No staff found to get company_id');
 
     // Detect Name Column
     const sampleStaff = staffList[0] || {};
     const staffKeys = Object.keys(sampleStaff);
     const nameColumn = staffKeys.find(k => ['display_name', 'name', 'full_name', 'user_name', 'username', 'staff_name', 'employee_name'].includes(k)) || 'id';
 
-    // Pick a target company_id. Prefer one that is not null.
-    const targetCompStaff = staffList.find((s: any) => s.company_id) || staffList[0];
-    const TARGET_COMPANY_ID = targetCompStaff.company_id;
-
-    if (!TARGET_COMPANY_ID) throw new Error('Could not determine target company_id from staff table');
-
-    // 2. Build Maps
     const normalize = (s: string) => s ? String(s).replace(/\s+/g, '').toLowerCase() : '';
 
-    // New Staff Map: Normalized Name -> New ID
     const nameToNewId = new Map();
     staffList.forEach((s: any) => {
         const norm = normalize(s[nameColumn]);
         if (norm) nameToNewId.set(norm, s.id);
     });
 
-    // Old Staff Map: Old ID -> Normalized Name (From timecards table)
+    // Old Staff Map
     const { data: oldTimecards, error: oldError } = await supabase.from('timecards').select('*');
-    if (oldError) throw oldError;
-
-    // Map Old ID to Name(s) - Try multiple fields
+    // If table doesn't exist or error, we continue with empty map
     const oldIdToName = new Map();
-    oldTimecards.forEach((card: any) => {
-        // Collect potential names
-        const names = [card.staff_name, card.name, card.display_name, card.employee_name, card.user_name].filter(Boolean);
-        if (names.length > 0) {
-            // Store the first valid name found
-            oldIdToName.set(card.staff_id, names[0]);
-        }
-    });
+    if (oldTimecards) {
+        oldTimecards.forEach((card: any) => {
+            const names = [card.staff_name, card.name, card.display_name, card.employee_name, card.user_name].filter(Boolean);
+            if (names.length > 0) oldIdToName.set(card.staff_id, names[0]);
+        });
+    }
 
     // 3. Process All Logs
     const { data: allLogs, error: logsError } = await supabase.from('timecard_logs').select('id, staff_id');
@@ -91,21 +95,19 @@ async function superForceSync(supabase: any) {
     let updatedCount = 0;
     const details: any[] = [];
 
-    // We will update logs one by one or in batches.
     for (const log of allLogs) {
         let newStaffId = null;
         let matchMethod = 'none';
 
+        // Match Logic
         // Attempt 1: Check if log.staff_id is already a New ID (exists in staffList)
         if (staffList.some((s: any) => s.id === log.staff_id)) {
             newStaffId = log.staff_id;
             matchMethod = 'already_new_id';
         }
 
-        // Attempt 2: Treat log.staff_id as Old ID -> Look up Name -> Look up New ID
+        // Attempt 2: Match by Old ID -> Name -> New ID
         if (!newStaffId || matchMethod === 'already_new_id') {
-            // Even if matchMethod is already_new_id, we might want to check name match just in case? 
-            // No, trust ID if valid.
             if (!newStaffId) {
                 const oldName = oldIdToName.get(log.staff_id);
                 if (oldName) {
@@ -118,16 +120,11 @@ async function superForceSync(supabase: any) {
             }
         }
 
-        // Prepare Update Object
         const updatePayload: any = {
-            company_id: TARGET_COMPANY_ID // Force overwrite
+            company_id: TARGET_COMPANY_ID // UNCONDITIONAL OVERWRITE
         };
+        if (newStaffId) updatePayload.staff_id = newStaffId;
 
-        if (newStaffId) {
-            updatePayload.staff_id = newStaffId;
-        }
-
-        // Execute Update
         const { error: updateError } = await supabase
             .from('timecard_logs')
             .update(updatePayload)
@@ -135,23 +132,22 @@ async function superForceSync(supabase: any) {
 
         if (!updateError) {
             updatedCount++;
-            if (updatedCount <= 10) {
-                details.push({ id: log.id, method: matchMethod, new_staff_id: newStaffId, company_updated: true });
-            }
+            if (updatedCount <= 10) details.push({ id: log.id, method: matchMethod, new_staff_id: newStaffId });
         }
     }
 
     return {
-        status: 'Super Force Sync Completed',
+        status: 'Super Force Sync Completed (TEN&A Mode)',
+        target_company: targetCompany.name || 'Unknown',
+        target_company_id: TARGET_COMPANY_ID,
         total_logs_processed: allLogs.length,
         total_logs_updated: updatedCount,
-        target_company_id: TARGET_COMPANY_ID,
         sample_details: details
     };
 }
 
 async function syncCompanyIds(supabase: any) {
-    // 1. Fetch Staff
+    // 1. Fetch Staff, selecting ALL columns
     const { data: staffList, error: staffError } = await supabase.from('staff').select('*');
     if (staffError) throw staffError;
 
@@ -209,11 +205,11 @@ async function forceLinkStaff(supabase: any) {
         if (norm) nameToNewStaff.set(norm, s);
     });
 
-    // 2. Fetch OLD Timecards to get the mapping (Old ID -> Name)
-    const { data: oldTimecards, error: oldError } = await supabase.from('timecards').select('staff_id, staff_name, name, display_name, user_name, employee_name');
+    // 2. Fetch OLD Timecards
+    const { data: oldTimecards, error: oldError } = await supabase.from('timecards').select('*');
     if (oldError) throw oldError;
 
-    const oldStaffMap = new Map(); // Old ID -> Name List
+    const oldStaffMap = new Map();
     oldTimecards.forEach((card: any) => {
         if (!oldStaffMap.has(card.staff_id)) {
             const names = [card.staff_name, card.name, card.display_name, card.user_name, card.employee_name].filter(Boolean);
@@ -229,9 +225,7 @@ async function forceLinkStaff(supabase: any) {
         let matchedNewStaff = null;
         let matchName = '';
 
-        for (const name of names) { // names is explicitly treated as string[] here because we pushed specific string fields
-            // However, typescript might complain if not cast.
-            // We'll trust the logic flow from previous proven version.
+        for (const name of names) {
             const norm = normalize(name as string);
             if (nameToNewStaff.has(norm)) {
                 matchedNewStaff = nameToNewStaff.get(norm);
@@ -241,7 +235,6 @@ async function forceLinkStaff(supabase: any) {
         }
 
         if (matchedNewStaff) {
-            // Update using OLD ID match
             const { error: updateError } = await supabase
                 .from('timecard_logs')
                 .update({
