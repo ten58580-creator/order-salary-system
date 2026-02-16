@@ -137,11 +137,16 @@ async function superForceSync(supabase: any) {
     }
 
     return {
-        status: 'Super Force Sync Completed (TEN&A Mode)',
+        status: 'Super Force Sync Completed (TEN&A Default Mode)',
         target_company: targetCompany.name || 'Unknown',
         target_company_id: TARGET_COMPANY_ID,
         total_logs_processed: allLogs.length,
         total_logs_updated: updatedCount,
+        debug: {
+            staff_found: staffList.length,
+            old_timecards_found: oldTimecards ? oldTimecards.length : 0,
+            companies_scanned: companies.length
+        },
         sample_details: details
     };
 }
