@@ -92,11 +92,11 @@ function PayslipPageContent() {
 
             // 3. Calculate for each staff
             const calculated: PayslipData[] = sortedStaff.map(staff => {
-                const staffLogs = logs?.filter(l => l.staff_id === staff.id) || [];
+                const staffLogs = logs?.filter((l: any) => l.staff_id === staff.id) || [];
 
                 // Group by day to calculate daily work minutes
                 const dailyLogs = new Map<string, typeof staffLogs>();
-                staffLogs.forEach(log => {
+                staffLogs.forEach((log: any) => {
                     const dateStr = format(new Date(log.timestamp), 'yyyy-MM-dd');
                     if (!dailyLogs.has(dateStr)) dailyLogs.set(dateStr, []);
                     dailyLogs.get(dateStr)!.push(log);
@@ -105,9 +105,9 @@ function PayslipPageContent() {
                 let totalWorkMinutes = 0;
 
                 dailyLogs.forEach((dayLogs) => {
-                    const sorted = dayLogs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-                    const firstIn = sorted.find(l => l.event_type === 'clock_in');
-                    const lastOut = sorted.slice().reverse().find(l => l.event_type === 'clock_out');
+                    const sorted = dayLogs.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                    const firstIn = sorted.find((l: any) => l.event_type === 'clock_in');
+                    const lastOut = sorted.slice().reverse().find((l: any) => l.event_type === 'clock_out');
 
                     if (firstIn && lastOut) {
                         const start = new Date(firstIn.timestamp);
@@ -118,7 +118,7 @@ function PayslipPageContent() {
                         // Calculate break time
                         let currentBreakStartLog: (typeof staffLogs)[0] | null = null;
 
-                        sorted.forEach(log => {
+                        sorted.forEach((log: any) => {
                             const logTime = new Date(log.timestamp);
                             if (logTime < start || logTime > end) return;
 
