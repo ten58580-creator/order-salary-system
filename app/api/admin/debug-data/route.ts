@@ -40,9 +40,14 @@ export async function GET(request: Request) {
 }
 
 async function syncCompanyIds(supabase: any) {
-    // 1. Fetch Staff to get correct Company IDs
-    const { data: staffList, error: staffError } = await supabase.from('staff').select('id, company_id, display_name');
+    // 1. Fetch Staff to get correct Company IDs, selecting ALL columns to avoid missing column error
+    const { data: staffList, error: staffError } = await supabase.from('staff').select('*');
     if (staffError) throw staffError;
+
+    // Detect Name Column
+    const sampleStaff = staffList[0] || {};
+    const staffKeys = Object.keys(sampleStaff);
+    const nameColumn = staffKeys.find(k => ['display_name', 'name', 'full_name', 'user_name', 'username', 'staff_name', 'employee_name'].includes(k)) || 'id';
 
     let updatedCount = 0;
     const errors = [];
@@ -51,6 +56,7 @@ async function syncCompanyIds(supabase: any) {
     // 2. Update timecard_logs for each staff
     for (const staff of staffList) {
         if (!staff.company_id) continue;
+        const staffName = staff[nameColumn] || staff.id;
 
         const { count, error } = await supabase
             .from('timecard_logs')
@@ -59,10 +65,10 @@ async function syncCompanyIds(supabase: any) {
             .select('*', { count: 'exact', head: true });
 
         if (error) {
-            errors.push({ staff: staff.display_name, msg: error.message });
+            errors.push({ staff: staffName, msg: error.message });
         } else {
             updatedCount += (count || 0);
-            details.push({ staff: staff.display_name, count: count, company_id: staff.company_id });
+            details.push({ staff: staffName, count: count, company_id: staff.company_id });
         }
     }
 
@@ -85,7 +91,7 @@ async function forceLinkStaff(supabase: any) {
 
     const sampleStaff = staffList[0] || {};
     const staffKeys = Object.keys(sampleStaff);
-    const nameColumn = staffKeys.find(k => ['display_name', 'name', 'full_name', 'user_name', 'username', 'staff_name'].includes(k)) || 'id';
+    const nameColumn = staffKeys.find(k => ['display_name', 'name', 'full_name', 'user_name', 'username', 'staff_name', 'employee_name'].includes(k)) || 'id';
 
     staffList.forEach((s: any) => {
         const norm = normalize(s[nameColumn]);
