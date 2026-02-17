@@ -43,58 +43,36 @@ export async function GET(request: Request) {
 }
 
 async function superForceSync(supabase: any) {
-    // 1. Get TEN&A Company ID
+    // 1. Get 株式会社TEN&A Company ID
     let TARGET_COMPANY_ID: string | null = null;
     let targetCompanyName = 'Unknown';
     let source = 'Unknown';
 
-    // Strategy A: Find specific staff '城間' (Shirokama) who represents the correct company
-    const { data: shirokama, error: sErr } = await supabase
-        .from('staff')
-        .select('*')
-        .or('display_name.ilike.%城間%,name.ilike.%城間%,full_name.ilike.%城間%')
-        .limit(1)
-        .single();
+    const { data: companies, error: compError } = await supabase.from('companies').select('*');
+    if (compError) throw compError;
 
-    if (shirokama && shirokama.company_id) {
-        TARGET_COMPANY_ID = shirokama.company_id;
-        targetCompanyName = `Associated with Staff: ${shirokama.display_name || shirokama.name}`;
-        source = 'Staff (Shirokama)';
-    }
+    if (companies) {
+        // Priority 1: Exact Match for "株式会社TEN&A"
+        let target = companies.find((c: any) => c.name === '株式会社TEN&A');
 
-    // Strategy B: If Shirokama not found, look for company "TEN" but EXCLUDE "A社"
-    if (!TARGET_COMPANY_ID) {
-        const { data: companies, error: compError } = await supabase.from('companies').select('*');
-        if (!compError && companies) {
-            // Priority 1: Contains 'TEN'
-            let target = companies.find((c: any) => c.name && c.name.toUpperCase().includes('TEN'));
+        // Priority 2: Contains "TEN&A"
+        if (!target) {
+            target = companies.find((c: any) => c.name && c.name.includes('TEN&A'));
+        }
 
-            // Priority 2: Not "A社"
-            if (!target) {
-                target = companies.find((c: any) => c.name && !c.name.includes('A社') && !c.name.includes('Ａ社'));
-            }
+        // Priority 3: Contains "TEN" but NOT "A" (to avoid A社 if it contains "TEN" for some reason, though unlikely)
+        // Just stick to TEN&A as requested.
 
-            if (target) {
-                TARGET_COMPANY_ID = target.id;
-                targetCompanyName = target.name;
-                source = 'Company Search';
-            }
+        if (target) {
+            TARGET_COMPANY_ID = target.id;
+            targetCompanyName = target.name;
+            source = 'Company Name Search (株式会社TEN&A)';
         }
     }
 
-    if (!TARGET_COMPANY_ID) {
-        // Fallback: Just take the first valid company_id from ANY staff
-        const { data: anyStaff } = await supabase.from('staff').select('company_id').not('company_id', 'is', null).limit(1);
-        if (anyStaff && anyStaff.length > 0) {
-            TARGET_COMPANY_ID = anyStaff[0].company_id;
-            targetCompanyName = 'Fallback Staff Company';
-            source = 'Any Staff';
-        }
-    }
+    if (!TARGET_COMPANY_ID) throw new Error('CRITICAL: Could not find company "株式会社TEN&A". Please ensure it is registered.');
 
-    if (!TARGET_COMPANY_ID) throw new Error('CRITICAL: Could not determine TEN&A Company ID. Please ensure staff "城間" exists or a company named "TEN" exists.');
-
-    // 2. Prepare Staff Maps
+    // 2. Prepare Staff Maps (Still needed to link New Staff IDs if they are missing in logs)
     const { data: staffList, error: staffError } = await supabase.from('staff').select('*');
     if (staffError) throw staffError;
 
@@ -138,7 +116,7 @@ async function superForceSync(supabase: any) {
             matchMethod = 'already_new_id';
         }
 
-        // Attempt 2: Match by Old ID -> Name -> New ID
+        // Attempt 2: Match by Old ID -> Name -> New ID (only if newStaffId not found yet)
         if (!newStaffId) {
             const oldName = oldIdToName.get(log.staff_id);
             if (oldName) {
@@ -151,8 +129,9 @@ async function superForceSync(supabase: any) {
         }
 
         const updatePayload: any = {
-            company_id: TARGET_COMPANY_ID // UNCONDITIONAL OVERWRITE
+            company_id: TARGET_COMPANY_ID // UNCONDITIONAL OVERWRITE to TEN&A
         };
+        // Also update staff_id if we found a better match
         if (newStaffId) updatePayload.staff_id = newStaffId;
 
         const { error: updateError } = await supabase
@@ -167,7 +146,7 @@ async function superForceSync(supabase: any) {
     }
 
     return {
-        status: 'Super Force Sync Completed (Correct Logic)',
+        status: 'Super Force Sync Completed (TEN&A Targeted)',
         target_company: targetCompanyName,
         target_company_id: TARGET_COMPANY_ID,
         source_logic: source,
@@ -175,7 +154,8 @@ async function superForceSync(supabase: any) {
         total_logs_updated: updatedCount,
         debug: {
             staff_found: staffList.length,
-            old_timecards_found: oldTimecards ? oldTimecards.length : 0
+            old_timecards_found: oldTimecards ? oldTimecards.length : 0,
+            companies_scanned: companies ? companies.length : 0
         },
         sample_details: details
     };
