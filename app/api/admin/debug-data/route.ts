@@ -44,21 +44,55 @@ export async function GET(request: Request) {
 
 async function superForceSync(supabase: any) {
     // 1. Get TEN&A Company ID
-    // Try to find company named like 'TEN&A' or just take the first one since it's a single company system
-    const { data: companies, error: compError } = await supabase.from('companies').select('*');
-    if (compError) throw compError;
+    let TARGET_COMPANY_ID: string | null = null;
+    let targetCompanyName = 'Unknown';
+    let source = 'Unknown';
 
-    let targetCompany = (companies || []).find((c: any) => c.name && c.name.includes('TEN'));
-    if (!targetCompany && companies && companies.length > 0) targetCompany = companies[0];
+    // Strategy A: Find specific staff '城間' (Shirokama) who represents the correct company
+    const { data: shirokama, error: sErr } = await supabase
+        .from('staff')
+        .select('*')
+        .or('display_name.ilike.%城間%,name.ilike.%城間%,full_name.ilike.%城間%')
+        .limit(1)
+        .single();
 
-    if (!targetCompany) {
-        // Fallback to staff's company_id if companies table is empty/inaccessible
-        const { data: sList } = await supabase.from('staff').select('company_id').not('company_id', 'is', null).limit(1);
-        if (sList && sList.length > 0) targetCompany = { id: sList[0].company_id, name: 'Fallback from Staff' };
+    if (shirokama && shirokama.company_id) {
+        TARGET_COMPANY_ID = shirokama.company_id;
+        targetCompanyName = `Associated with Staff: ${shirokama.display_name || shirokama.name}`;
+        source = 'Staff (Shirokama)';
     }
 
-    const TARGET_COMPANY_ID = targetCompany?.id;
-    if (!TARGET_COMPANY_ID) throw new Error('CRITICAL: Could not determine (Stock) TEN&A Company ID');
+    // Strategy B: If Shirokama not found, look for company "TEN" but EXCLUDE "A社"
+    if (!TARGET_COMPANY_ID) {
+        const { data: companies, error: compError } = await supabase.from('companies').select('*');
+        if (!compError && companies) {
+            // Priority 1: Contains 'TEN'
+            let target = companies.find((c: any) => c.name && c.name.toUpperCase().includes('TEN'));
+
+            // Priority 2: Not "A社"
+            if (!target) {
+                target = companies.find((c: any) => c.name && !c.name.includes('A社') && !c.name.includes('Ａ社'));
+            }
+
+            if (target) {
+                TARGET_COMPANY_ID = target.id;
+                targetCompanyName = target.name;
+                source = 'Company Search';
+            }
+        }
+    }
+
+    if (!TARGET_COMPANY_ID) {
+        // Fallback: Just take the first valid company_id from ANY staff
+        const { data: anyStaff } = await supabase.from('staff').select('company_id').not('company_id', 'is', null).limit(1);
+        if (anyStaff && anyStaff.length > 0) {
+            TARGET_COMPANY_ID = anyStaff[0].company_id;
+            targetCompanyName = 'Fallback Staff Company';
+            source = 'Any Staff';
+        }
+    }
+
+    if (!TARGET_COMPANY_ID) throw new Error('CRITICAL: Could not determine TEN&A Company ID. Please ensure staff "城間" exists or a company named "TEN" exists.');
 
     // 2. Prepare Staff Maps
     const { data: staffList, error: staffError } = await supabase.from('staff').select('*');
@@ -78,8 +112,7 @@ async function superForceSync(supabase: any) {
     });
 
     // Old Staff Map
-    const { data: oldTimecards, error: oldError } = await supabase.from('timecards').select('*');
-    // If table doesn't exist or error, we continue with empty map
+    const { data: oldTimecards } = await supabase.from('timecards').select('*');
     const oldIdToName = new Map();
     if (oldTimecards) {
         oldTimecards.forEach((card: any) => {
@@ -99,7 +132,6 @@ async function superForceSync(supabase: any) {
         let newStaffId = null;
         let matchMethod = 'none';
 
-        // Match Logic
         // Attempt 1: Check if log.staff_id is already a New ID (exists in staffList)
         if (staffList.some((s: any) => s.id === log.staff_id)) {
             newStaffId = log.staff_id;
@@ -107,15 +139,13 @@ async function superForceSync(supabase: any) {
         }
 
         // Attempt 2: Match by Old ID -> Name -> New ID
-        if (!newStaffId || matchMethod === 'already_new_id') {
-            if (!newStaffId) {
-                const oldName = oldIdToName.get(log.staff_id);
-                if (oldName) {
-                    const norm = normalize(oldName);
-                    if (nameToNewId.has(norm)) {
-                        newStaffId = nameToNewId.get(norm);
-                        matchMethod = 'old_id_match';
-                    }
+        if (!newStaffId) {
+            const oldName = oldIdToName.get(log.staff_id);
+            if (oldName) {
+                const norm = normalize(oldName);
+                if (nameToNewId.has(norm)) {
+                    newStaffId = nameToNewId.get(norm);
+                    matchMethod = 'old_id_match';
                 }
             }
         }
@@ -137,15 +167,15 @@ async function superForceSync(supabase: any) {
     }
 
     return {
-        status: 'Super Force Sync Completed (TEN&A Default Mode)',
-        target_company: targetCompany.name || 'Unknown',
+        status: 'Super Force Sync Completed (Correct Logic)',
+        target_company: targetCompanyName,
         target_company_id: TARGET_COMPANY_ID,
+        source_logic: source,
         total_logs_processed: allLogs.length,
         total_logs_updated: updatedCount,
         debug: {
             staff_found: staffList.length,
-            old_timecards_found: oldTimecards ? oldTimecards.length : 0,
-            companies_scanned: companies.length
+            old_timecards_found: oldTimecards ? oldTimecards.length : 0
         },
         sample_details: details
     };
