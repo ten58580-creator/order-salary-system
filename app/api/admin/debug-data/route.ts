@@ -72,7 +72,8 @@ async function superForceSync(supabase: any) {
 
     if (!TARGET_COMPANY_ID) throw new Error('CRITICAL: Could not find company "株式会社TEN&A". Please ensure it is registered.');
 
-    // 2. Prepare Staff Maps (Still needed to link New Staff IDs if they are missing in logs)
+    // 2. Prepare Staff Maps & UNIFY STAFF to Target Company
+    // We must ensure the staff (Jomama etc) are ALSO in this company, otherwise they won't appear.
     const { data: staffList, error: staffError } = await supabase.from('staff').select('*');
     if (staffError) throw staffError;
 
@@ -83,13 +84,28 @@ async function superForceSync(supabase: any) {
 
     const normalize = (s: string) => s ? String(s).replace(/\s+/g, '').toLowerCase() : '';
 
+    // Map of Normalized Name -> Master Staff ID
     const nameToNewId = new Map();
-    staffList.forEach((s: any) => {
-        const norm = normalize(s[nameColumn]);
-        if (norm) nameToNewId.set(norm, s.id);
-    });
+    let staffUpdatedCount = 0;
 
-    // Old Staff Map
+    // 2a. Update Staff to Target Company if they are 'Shirokama' or 'Janani' etc.
+    // Actually, we should probably update ALL staff found in current context that match the logs?
+    // Let's rely on name matching.
+
+    for (const s of staffList) {
+        const norm = normalize(s[nameColumn]);
+        if (norm) {
+            nameToNewId.set(norm, s.id);
+
+            // CRITICAL: Move this staff to TEN&A if not already
+            if (s.company_id !== TARGET_COMPANY_ID) {
+                await supabase.from('staff').update({ company_id: TARGET_COMPANY_ID }).eq('id', s.id);
+                staffUpdatedCount++;
+            }
+        }
+    }
+
+    // Old Staff Map for linking old IDs
     const { data: oldTimecards } = await supabase.from('timecards').select('*');
     const oldIdToName = new Map();
     if (oldTimecards) {
@@ -110,28 +126,38 @@ async function superForceSync(supabase: any) {
         let newStaffId = null;
         let matchMethod = 'none';
 
-        // Attempt 1: Check if log.staff_id is already a New ID (exists in staffList)
-        if (staffList.some((s: any) => s.id === log.staff_id)) {
-            newStaffId = log.staff_id;
-            matchMethod = 'already_new_id';
+        // Find Name
+        let staffName = '';
+
+        // Try to identify staff name from current ID match
+        const existingStaff = staffList.find((s: any) => s.id === log.staff_id);
+        if (existingStaff) {
+            staffName = existingStaff[nameColumn];
+        } else {
+            // Try old map
+            const oldName = oldIdToName.get(log.staff_id);
+            if (oldName) staffName = oldName;
         }
 
-        // Attempt 2: Match by Old ID -> Name -> New ID (only if newStaffId not found yet)
-        if (!newStaffId) {
-            const oldName = oldIdToName.get(log.staff_id);
-            if (oldName) {
-                const norm = normalize(oldName);
-                if (nameToNewId.has(norm)) {
-                    newStaffId = nameToNewId.get(norm);
-                    matchMethod = 'old_id_match';
-                }
+        // Resolve to Master ID in New Company
+        if (staffName) {
+            const norm = normalize(staffName);
+            if (nameToNewId.has(norm)) {
+                newStaffId = nameToNewId.get(norm);
+                matchMethod = existingStaff ? 'direct_id_verified' : 'relieved_by_name';
             }
+        }
+
+        // If we still don't have a new ID but the log has an ID, check if we simply trust it (if we moved the staff already)
+        if (!newStaffId && existingStaff) {
+            newStaffId = log.staff_id; // Keep existing if name match failed but ID valid
+            matchMethod = 'keep_existing_id';
         }
 
         const updatePayload: any = {
             company_id: TARGET_COMPANY_ID // UNCONDITIONAL OVERWRITE to TEN&A
         };
-        // Also update staff_id if we found a better match
+        // Also update staff_id if we found a better match (Master ID)
         if (newStaffId) updatePayload.staff_id = newStaffId;
 
         const { error: updateError } = await supabase
@@ -141,17 +167,18 @@ async function superForceSync(supabase: any) {
 
         if (!updateError) {
             updatedCount++;
-            if (updatedCount <= 10) details.push({ id: log.id, method: matchMethod, new_staff_id: newStaffId });
+            if (updatedCount <= 10) details.push({ id: log.id, method: matchMethod, new_staff_id: newStaffId, name: staffName });
         }
     }
 
     return {
-        status: 'Super Force Sync Completed (TEN&A Targeted)',
+        status: 'Super Force Sync Completed (Migration to TEN&A)',
         target_company: targetCompanyName,
         target_company_id: TARGET_COMPANY_ID,
-        source_logic: source,
+        source_logic: 'Full Migration (Staff + Logs)',
         total_logs_processed: allLogs.length,
         total_logs_updated: updatedCount,
+        staff_moved_to_company: staffUpdatedCount,
         debug: {
             staff_found: staffList.length,
             old_timecards_found: oldTimecards ? oldTimecards.length : 0,
