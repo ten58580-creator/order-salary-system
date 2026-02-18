@@ -22,7 +22,13 @@ export async function GET(request: Request) {
     });
 
     try {
-        if (action === 'sync_company') {
+        if (action === 'analyze') {
+            const result = await analyzeData(supabase);
+            return NextResponse.json(result);
+        } else if (action === 'nuclear_fix') {
+            const result = await nuclearFix(supabase);
+            return NextResponse.json(result);
+        } else if (action === 'sync_company') {
             const result = await syncCompanyIds(supabase);
             return NextResponse.json(result);
         } else if (action === 'force_link') {
@@ -34,12 +40,138 @@ export async function GET(request: Request) {
         } else {
             return NextResponse.json({
                 status: 'Debug API Active',
-                available_actions: ['force_link', 'sync_company', 'super_force_sync']
+                available_actions: ['analyze', 'nuclear_fix', 'force_link', 'sync_company', 'super_force_sync']
             });
         }
     } catch (e: any) {
         return NextResponse.json({ error: e.message, stack: e.stack }, { status: 500 });
     }
+}
+
+async function analyzeData(supabase: any) {
+    const { data: companies } = await supabase.from('companies').select('*');
+    const { data: staff } = await supabase.from('staff').select('id, company_id, display_name');
+    const { data: logs } = await supabase.from('timecard_logs').select('id, company_id, staff_id');
+
+    const companyStats: any = {};
+    (companies || []).forEach((c: any) => {
+        companyStats[c.id] = { name: c.name, staff_count: 0, log_count: 0 };
+    });
+    // Add 'null' or 'unknown' bucket
+    companyStats['unknown'] = { name: 'Unknown/Null', staff_count: 0, log_count: 0 };
+
+    (staff || []).forEach((s: any) => {
+        const cid = s.company_id || 'unknown';
+        if (!companyStats[cid]) companyStats[cid] = { name: 'Unregistered Company', staff_count: 0, log_count: 0 };
+        companyStats[cid].staff_count++;
+    });
+
+    (logs || []).forEach((l: any) => {
+        const cid = l.company_id || 'unknown';
+        if (!companyStats[cid]) companyStats[cid] = { name: 'Unregistered Company', staff_count: 0, log_count: 0 };
+        companyStats[cid].log_count++;
+    });
+
+    return {
+        status: 'Analysis Completed',
+        stats: companyStats,
+        total_staff: staff?.length,
+        total_logs: logs?.length
+    };
+}
+
+async function nuclearFix(supabase: any) {
+    // 1. Find TEN&A
+    const { data: companies } = await supabase.from('companies').select('*');
+    let target = (companies || []).find((c: any) => c.name === '株式会社TEN&A');
+    if (!target) target = (companies || []).find((c: any) => c.name && c.name.includes('TEN'));
+
+    if (!target) throw new Error('CRITICAL: 株式会社TEN&A not found.');
+    const TARGET_COMPANY_ID = target.id;
+
+    // 2. UPDATE ALL STAFF to this Company
+    // This ensures UI (which picks staff[0].company_id) sees the correct company
+    const { error: staffUpdateError } = await supabase
+        .from('staff')
+        .update({ company_id: TARGET_COMPANY_ID })
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // Dummy condition to update all rows (supabase might require WHERE)
+
+    // Some supabase configs require a WHERE clause. .neq('id', 'uuid-that-doesnt-exist') is a trick, 
+    // or we can use a known column. Let's try iterating if mass update fails or is risky, but mass update is faster.
+    // Actually, RLS might block "UPDATE ALL". 
+    // But we are using Service Role Key (admin123 logic), so RLS is bypassed.
+
+    // Let's use loop for safety and feedback
+    const { data: allStaff } = await supabase.from('staff').select('*');
+    let staffUpdated = 0;
+    if (allStaff) {
+        for (const s of allStaff) {
+            if (s.company_id !== TARGET_COMPANY_ID) {
+                await supabase.from('staff').update({ company_id: TARGET_COMPANY_ID }).eq('id', s.id);
+                staffUpdated++;
+            }
+        }
+    }
+
+    // 3. UPDATE ALL LOGS to this Company
+    const { data: allLogs } = await supabase.from('timecard_logs').select('*');
+    let logsUpdated = 0;
+    let logsRelinked = 0;
+
+    // Pre-calculate name map for relinking
+    const normalize = (s: string) => s ? String(s).replace(/\s+/g, '').toLowerCase() : '';
+    const nameToId = new Map();
+    (allStaff || []).forEach((s: any) => {
+        const name = s.display_name || s.name || s.full_name || s.user_name;
+        if (name) nameToId.set(normalize(name), s.id);
+    });
+
+    // Old timecards map
+    const { data: oldData } = await supabase.from('timecards').select('*');
+    const oldIdToName = new Map();
+    (oldData || []).forEach((c: any) => {
+        const name = c.staff_name || c.name || c.display_name || c.user_name;
+        if (name) oldIdToName.set(c.staff_id, name);
+    });
+
+    if (allLogs) {
+        for (const log of allLogs) {
+            let changes: any = {};
+            if (log.company_id !== TARGET_COMPANY_ID) changes.company_id = TARGET_COMPANY_ID;
+
+            // Relink Staff ID if it looks broken or to ensure consistency
+            let currentStaff = (allStaff || []).find((s: any) => s.id === log.staff_id);
+            if (!currentStaff) {
+                // Broken link? Try to find by name
+                const oldName = oldIdToName.get(log.staff_id);
+                if (oldName) {
+                    const nid = nameToId.get(normalize(oldName));
+                    if (nid) {
+                        changes.staff_id = nid;
+                        logsRelinked++;
+                    }
+                }
+            } else {
+                // Link is valid, but is it the BEST link? 
+                // Checks if there are duplicates and we are pointing to the wrong one?
+                // For now, assume if ID exists in Staff table, it is valid.
+            }
+
+            if (Object.keys(changes).length > 0) {
+                await supabase.from('timecard_logs').update(changes).eq('id', log.id);
+                logsUpdated++;
+            }
+        }
+    }
+
+    return {
+        status: 'Nuclear Fix Completed',
+        target_company: target.name,
+        target_company_id: TARGET_COMPANY_ID,
+        staff_moved: staffUpdated,
+        logs_moved_or_relinked: logsUpdated,
+        logs_relinked_count: logsRelinked
+    };
 }
 
 async function superForceSync(supabase: any) {
