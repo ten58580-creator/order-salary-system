@@ -914,6 +914,8 @@ function DashboardContent() {
         isDanger={confirmModal.isDanger}
         confirmText={confirmModal.confirmText}
       />
+
+      <EmergencyFixPanel companyId={companyId} />
     </DashboardLayout>
   );
 }
