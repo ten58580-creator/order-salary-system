@@ -19,6 +19,51 @@ import AdminPinModal from '@/components/AdminPinModal';
 import { useAdminGuard } from '@/components/AdminGuardContext';
 import { Lock } from 'lucide-react';
 
+// EMERGENCY DEBUG PANEL
+const EmergencyFixPanel = ({ companyId }: { companyId: string | null }) => {
+  const [status, setStatus] = useState('待機中');
+
+  const handleFix = async () => {
+    if (!companyId) return;
+    if (!confirm('【最終確認】\n全データをこのID（あなたの現在のID）に強制統一します。\n本当によろしいですか？')) return;
+
+    setStatus('実行中...');
+    try {
+      const res = await fetch(`/api/debug/check-session?execute_fix=true&target_company_id=${companyId}`);
+      const json = await res.json();
+      if (json.fix_executed) {
+        alert('修正完了！\n画面をリロードしてください。');
+        setStatus('完了');
+        window.location.reload();
+      } else {
+        alert('エラー: ' + JSON.stringify(json));
+        setStatus('失敗');
+      }
+    } catch (e: any) {
+      alert('通信エラー: ' + e.message);
+      setStatus('エラー');
+    }
+  };
+
+  if (!companyId) return null;
+
+  return (
+    <div className="fixed bottom-4 right-4 bg-red-600 text-white p-4 rounded shadow-xl z-50 border-4 border-yellow-400">
+      <h3 className="font-bold text-lg mb-2">⚠️ 緊急データ修復</h3>
+      <div className="text-sm mb-2">
+        <p>あなたのID: <span className="font-mono bg-black px-1">{companyId}</span></p>
+      </div>
+      <button
+        onClick={handleFix}
+        className="w-full bg-yellow-400 text-black font-bold py-2 px-4 rounded hover:bg-yellow-300 transition"
+      >
+        {status === '実行中...' ? '処理中...' : 'データをここに集約する'}
+      </button>
+      <p className="text-xs mt-2 text-yellow-100">※全ログ・全スタッフを強制移動</p>
+    </div>
+  );
+};
+
 type Staff = Database['public']['Tables']['staff']['Row'] & {
   is_archived?: boolean;
 };
