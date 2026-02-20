@@ -349,7 +349,8 @@ function DashboardContent() {
 
         const logsByDay = new Map<string, typeof logs>();
         logs.forEach(l => {
-          const day = format(new Date(l.timestamp), 'yyyy-MM-dd');
+          // タイムスタンプはUTC保存のため、UTC日付でグルーピングする（ローカルタイム変換すると日付がズレる）
+          const day = new Date(l.timestamp).toISOString().slice(0, 10);
           if (!logsByDay.has(day)) logsByDay.set(day, []);
           logsByDay.get(day)!.push(l);
         });
@@ -915,7 +916,6 @@ function DashboardContent() {
         confirmText={confirmModal.confirmText}
       />
 
-      <EmergencyFixPanel companyId={companyId} />
     </DashboardLayout>
   );
 }
