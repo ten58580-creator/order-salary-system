@@ -31,7 +31,7 @@ const EmergencyFixPanel = ({ companyId }: { companyId: string | null }) => {
     try {
       const res = await fetch(`/api/debug/check-session?execute_fix=true&target_company_id=${companyId}`);
       const json = await res.json();
-      if (json.fix_executed) {
+      if (json.fix_result && json.fix_result.status === 'FIX EXECUTED') {
         alert('修正完了！\n画面をリロードしてください。');
         setStatus('完了');
         window.location.reload();
